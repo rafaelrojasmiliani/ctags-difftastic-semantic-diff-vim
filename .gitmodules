@@ -1,0 +1,3 @@
+[submodule "submodules/semantic-ctags-diff"]
+	path = submodules/semantic-ctags-diff
+	url = https://github.com/rafaelrojasmiliani/semantic-ctags-diff
