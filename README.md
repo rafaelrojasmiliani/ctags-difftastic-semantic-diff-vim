@@ -14,6 +14,58 @@ reads the classic tags file via `python-ctags3`. Universal Ctags is recommended;
 Exuberant Ctags works with reduced C++ metadata. `:SemanticCtagsDiffJson` refers
 to the semantic **report** format, not ctags JSON.
 
+## How it works: ctags line ranges
+
+Everything this plugin shows in a semantic diff comes from **ctags symbol line
+ranges** plus **Git line changes**:
+
+| Layer | Role |
+|-------|------|
+| Git | Which files/lines changed between `base` and `head` |
+| ctags | Each symbol’s start/end line, kind, and qualified name |
+| Python | Map changed lines → symbols; classify added/removed/modified |
+
+The Vim plugin does **not** parse ctags itself. It calls
+`semantic-branch-diff`, which runs ctags on file snapshots and matches Git diff
+lines to enclosing symbols (function, method, class, …).
+
+### Example
+
+You change line 13 inside a method body:
+
+```cpp
+void RobotController::configure(double x) {  // ctags: lines 12–15
+  m_gain = x;   // ← you edit this line (line 13)
+}
+```
+
+- **Plain git diff:** `@@ … +13,1 @@` — one line changed.
+- **Semantic diff:** `modified function ImFusion::Robotics::RobotController::configure`
+  because line 13 falls inside ctags range 12–15.
+
+From Vim:
+
+```vim
+:SemanticCtagsDiff main HEAD
+```
+
+The Markdown scratch buffer lists **symbols**, not just hunks. JSON output
+includes `new_range: [12, 15]` and `flog_limit: "12,15:src/RobotController.cpp"`
+for Flog navigation.
+
+Run the bundled example (no Git repo needed):
+
+```bash
+cd submodules/semantic-ctags-diff
+semantic-branch-diff \
+  --old-dir examples/01_added_methods/old \
+  --new-dir examples/01_added_methods/new \
+  --format markdown
+```
+
+See the Python library README for the full model and limitations (file-scope
+changes, untagged regions, estimated end lines on Exuberant ctags).
+
 ## Overview
 
 ```
