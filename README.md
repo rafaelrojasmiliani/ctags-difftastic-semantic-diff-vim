@@ -8,6 +8,12 @@ JSON.
 Works with **vim-fugitive** worktree detection (submodules) and optional
 **vim-flog** log navigation.
 
+**Ctags note:** This plugin does **not** require ctags built with JSON output
+(`--output-format=json`). The Python tool runs ordinary ctags (`-f tags`) and
+reads the classic tags file via `python-ctags3`. Universal Ctags is recommended;
+Exuberant Ctags works with reduced C++ metadata. `:SemanticCtagsDiffJson` refers
+to the semantic **report** format, not ctags JSON.
+
 ## Overview
 
 ```
@@ -36,7 +42,7 @@ _Text placeholders — add screenshots under `docs/screenshots/` when available.
 | Vim 8+ | Yes |
 | Git | Yes |
 | Python 3 + `semantic-branch-diff` | Yes |
-| Universal Ctags | Yes |
+| Universal Ctags (or Exuberant) | Yes — classic tags file, **not** JSON output |
 | vim-fugitive | Recommended |
 | vim-flog | Optional |
 
@@ -133,11 +139,35 @@ git -C <current-file-dir-or-cwd> rev-parse --show-toplevel
 companion (less semantic than the Python report).
 
 `:SemanticCtagsDiffFlogSymbol` lists **modified symbols** from the cached JSON
-result, opens the file at the symbol line, and delegates to your existing
-`:FlogsplitSymbol`, `:FlogsplitFunction`, `:FlogsplitClass`, or
-`:FlogsplitNamespace` commands when defined.
+result (using the Python `navigation` list when available), then opens Flog with
+`flog_limit` from the JSON.
 
-This plugin does **not** define Flogsplit commands or mappings.
+### Flogsplit* commands (cursor symbol history)
+
+When vim-flog is installed, `plugin/semantic_ctags_flog.vim` defines
+`:FlogsplitSymbol`, `:FlogsplitFunction`, etc. **only if you have not already
+defined them** (e.g. in a legacy `files` script).
+
+These call Python `symbol-at` mode — **no Vim ctags parsing**, and **no ctags
+JSON output** required:
+
+```bash
+semantic-branch-diff --symbol-at --file path.cpp --line 42 --kind function
+```
+
+### Responsibility split (Python vs Vim)
+
+| Concern | Python (`semantic-branch-diff`) | Vim plugin |
+|---------|--------------------------------|------------|
+| Branch semantic diff | Yes | Invokes CLI, scratch buffers |
+| ctags execution + parsing | Yes (`python-ctags3`, classic tags) | No |
+| Symbol priority / kind inference | Yes (`symbols.py`) | No |
+| `flog_limit` strings | Yes (`navigation.py`) | Uses JSON field |
+| Repo worktree detection | — | Yes (Fugitive / git) |
+| Flog UI / colors | — | Yes |
+| Difftastic / Fugitive commit prompts | — | Not included (see `files` reference) |
+
+This plugin does **not** define Flogsplit commands if you already have custom ones.
 
 ## Architecture
 
@@ -155,6 +185,7 @@ flowchart LR
 
 - **Synchronous** execution (`system()`); large branches may block Vim.
 - Default file extensions target **C/C++**; configure `g:semantic_ctags_diff_include`.
+- Does **not** need ctags JSON output; any standard Universal or Exuberant build works.
 - **Vim 8 only** — no Neovim-only APIs, no Lua, no `jobstart()`.
 - No default mappings.
 - `:SemanticCtagsDiffFlogSymbol` requires a prior diff (JSON cache is fetched

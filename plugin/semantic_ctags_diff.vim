@@ -11,6 +11,7 @@ let g:semantic_ctags_diff_root = get(g:, 'semantic_ctags_diff_root', '')
 let g:semantic_ctags_diff_cli = get(g:, 'semantic_ctags_diff_cli', '')
 let g:semantic_ctags_diff_default_base = get(g:, 'semantic_ctags_diff_default_base', 'main')
 let g:semantic_ctags_diff_default_head = get(g:, 'semantic_ctags_diff_default_head', 'HEAD')
+" ctags executable (classic tags file; JSON output format is NOT used)
 let g:semantic_ctags_diff_ctags = get(g:, 'semantic_ctags_diff_ctags', 'ctags')
 let g:semantic_ctags_diff_format = get(g:, 'semantic_ctags_diff_format', 'markdown')
 let g:semantic_ctags_diff_include = get(g:, 'semantic_ctags_diff_include',

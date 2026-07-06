@@ -31,6 +31,11 @@ Required:
   - Python 3 with semantic-branch-diff installed
   - Universal Ctags (or Exuberant Ctags with reduced C++ metadata)
 
+Ctags does NOT need JSON output support. The Python tool writes a classic tags
+file (-f tags) and parses it with python-ctags3. Do not pass --output-format=json
+to ctags via g:semantic_ctags_diff_extra_args. :SemanticCtagsDiffJson produces a
+JSON semantic diff report from the Python tool, not JSON from ctags.
+
 Optional:
   - vim-fugitive (recommended for submodule worktree detection)
   - vim-flog (optional log navigation companion)
@@ -186,13 +191,28 @@ vim-flog
     :SemanticCtagsDiffFlog
     :SemanticCtagsDiffFlogSymbol
 
-  :SemanticCtagsDiffFlogSymbol coexists with custom commands such as:
-    :FlogsplitSymbol
-    :FlogsplitFunction
-    :FlogsplitClass
-    :FlogsplitNamespace
+  Branch-diff JSON includes a top-level "navigation" list (built by Python) with
+  label and flog_limit for each modified symbol.
 
-  This plugin does not define those mappings or commands.
+  Cursor symbol history (:FlogsplitSymbol, :FlogsplitFunction, etc.) is provided
+  by plugin/semantic_ctags_flog.vim when not already defined. These use Python
+  symbol-at mode — not Vim ctags parsing.
+
+  semantic-branch-diff --symbol-at --file PATH --line N [--kind function]
+
+PYTHON VS VIM                               *semantic-ctags-diff-architecture*
+
+Python (semantic-branch-diff):
+  - ctags via classic tags file (not ctags JSON output)
+  - Symbol normalization, branch diff, navigation / flog_limit helpers
+
+Vim plugin:
+  - Editor integration, scratch buffers, Fugitive worktree, Flog UI
+  - Does not re-implement ctags parsing from legacy files/ scripts
+
+Not included in this plugin:
+  - Difftastic staged-diff commit message context
+  - Fugitive :Commit ctags comment injection (see files/ reference script)
 
 ==============================================================================
 MAPPINGS                                      *semantic-ctags-diff-mappings*
@@ -210,6 +230,11 @@ TROUBLESHOOTING                        *semantic-ctags-diff-troubleshooting*
 ctags not found ~
   Install Universal Ctags and ensure it is on PATH, or set: >
     let g:semantic_ctags_diff_ctags = '/usr/bin/ctags'
+
+ctags JSON output not required ~
+  This plugin never uses ctags --output-format=json. A normal Universal or
+  Exuberant ctags build is sufficient. The semantic-branch-diff tool invokes
+  ctags with -f and reads the classic tags file via python-ctags3.
 
 Python module not found ~
   Install editable from the submodule: >

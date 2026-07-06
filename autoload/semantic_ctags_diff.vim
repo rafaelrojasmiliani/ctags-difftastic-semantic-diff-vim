@@ -459,6 +459,18 @@ function! semantic_ctags_diff#flog_symbol() abort
 endfunction
 
 function! semantic_ctags_diff#_collect_symbol_choices(json) abort
+  " Prefer Python-built navigation list (semantic_branch_diff.navigation).
+  if type(a:json) == v:t_dict && has_key(a:json, 'navigation') && !empty(a:json.navigation)
+    return map(copy(a:json.navigation), {_, v -> {
+          \ 'label': get(v, 'label', ''),
+          \ 'path': get(v, 'path', get(v, 'file', '')),
+          \ 'name': get(v, 'qualified_name', get(v, 'name', '')),
+          \ 'kind': get(v, 'kind', 'symbol'),
+          \ 'line': get(v, 'line', 1),
+          \ 'flog_limit': get(v, 'flog_limit', ''),
+          \ }})
+  endif
+
   let l:choices = []
   if !has_key(a:json, 'files')
     return l:choices
@@ -473,12 +485,16 @@ function! semantic_ctags_diff#_collect_symbol_choices(json) abort
       let l:kind = get(l:sym, 'kind', 'symbol')
       let l:range = has_key(l:sym, 'new_range') ? l:sym.new_range : []
       let l:line = !empty(l:range) ? l:range[0] : 1
+      let l:end = !empty(l:range) && len(l:range) >= 2 ? l:range[1] : l:line
+      let l:flog = get(l:sym, 'flog_limit', l:line . ',' . l:end . ':' . l:path)
+      let l:label = get(l:sym, 'label', l:path . ': ' . l:kind . ' ' . l:name)
       call add(l:choices, {
-            \ 'label': l:path . ': ' . l:name . ' (' . l:kind . ')',
+            \ 'label': l:label,
             \ 'path': l:path,
             \ 'name': l:name,
             \ 'kind': l:kind,
             \ 'line': l:line,
+            \ 'flog_limit': l:flog,
             \ })
     endfor
   endfor
@@ -486,6 +502,12 @@ function! semantic_ctags_diff#_collect_symbol_choices(json) abort
 endfunction
 
 function! semantic_ctags_diff#_open_symbol_in_flog(choice) abort
+  if !empty(a:choice.flog_limit) && exists(':Flogsplit') == 2
+    echo 'Flog history for ' . get(a:choice, 'label', a:choice.name)
+    execute 'Flogsplit -limit=' . fnameescape(a:choice.flog_limit)
+    return
+  endif
+
   let l:repo = !empty(s:last_repo) ? s:last_repo : semantic_ctags_diff#repo_root()
   let l:abs_path = simplify(l:repo . '/' . a:choice.path)
 
@@ -508,6 +530,98 @@ function! semantic_ctags_diff#_open_symbol_in_flog(choice) abort
     FlogsplitSymbol
   else
     echo 'semantic_ctags_diff: opened ' . a:choice.path . ' at line ' . a:choice.line
-    echo 'Define :FlogsplitSymbol (or kind-specific commands) for line-range history.'
+    echo 'Install vim-flog or define :FlogsplitSymbol for line-range history.'
   endif
+endfunction
+
+" --- Symbol-at-line via Python (replaces Vim ctags parsing) -----------------
+
+function! semantic_ctags_diff#current_git_relative_path() abort
+  let l:repo = semantic_ctags_diff#repo_root()
+  let l:file = fnamemodify(expand('%:p'), ':p')
+  let l:root = substitute(fnamemodify(l:repo, ':p'), '[\/]\+$', '', '') . '/'
+  if stridx(l:file, l:root) != 0
+    return ''
+  endif
+  return strpart(l:file, strlen(l:root))
+endfunction
+
+function! semantic_ctags_diff#build_symbol_at_command(file, line, kind_filter) abort
+  let l:py_root = semantic_ctags_diff#python_project_root()
+  let l:prefix = semantic_ctags_diff#_cli_prefix(l:py_root)
+  let l:args = [
+        \ '--symbol-at',
+        \ '--file', a:file,
+        \ '--line', string(a:line),
+        \ '--ctags', g:semantic_ctags_diff_ctags,
+        \ ]
+  if !empty(a:kind_filter)
+    call extend(l:args, ['--kind', a:kind_filter])
+  endif
+  let l:escaped = map(copy(l:args), 'shellescape(v:val)')
+  return l:prefix . ' ' . join(l:escaped, ' ')
+endfunction
+
+function! semantic_ctags_diff#symbol_at(line, kind_filter) abort
+  let l:rel = semantic_ctags_diff#current_git_relative_path()
+  let l:abs = expand('%:p')
+  if empty(l:abs) || !filereadable(l:abs)
+    throw 'semantic_ctags_diff: current buffer is not a readable file in the repo'
+  endif
+
+  let l:cmd = semantic_ctags_diff#build_symbol_at_command(l:abs, a:line, a:kind_filter)
+  let l:stdout_tmp = tempname()
+  let l:stderr_tmp = tempname()
+  call system(l:cmd . ' > ' . shellescape(l:stdout_tmp) . ' 2> ' . shellescape(l:stderr_tmp))
+  let l:exit = v:shell_error
+  let l:lines = filereadable(l:stdout_tmp) ? readfile(l:stdout_tmp) : []
+  let l:err = filereadable(l:stderr_tmp) ? readfile(l:stderr_tmp) : []
+  if filereadable(l:stdout_tmp) | call delete(l:stdout_tmp) | endif
+  if filereadable(l:stderr_tmp) | call delete(l:stderr_tmp) | endif
+
+  if l:exit != 0
+    throw 'semantic_ctags_diff: symbol-at failed: ' . join(l:err, ' ')
+  endif
+  if !exists('*json_decode')
+    throw 'semantic_ctags_diff: json_decode() required for symbol-at'
+  endif
+  let l:result = json_decode(join(l:lines, "\n"))
+  if !empty(l:rel)
+    let l:result.file = l:rel
+    if !empty(get(l:result, 'flog_limit', ''))
+      let l:parts = split(l:result.flog_limit, ':')
+      if len(l:parts) == 2
+        let l:result.flog_limit = l:parts[0] . ':' . l:rel
+      endif
+    endif
+  endif
+  return l:result
+endfunction
+
+function! semantic_ctags_diff#flog_current_symbol(open_cmd, kind_filter) abort
+  if exists(':Flog') != 2 && exists(':Flogsplit') != 2
+    echoerr 'semantic_ctags_diff: vim-flog is not installed'
+    return
+  endif
+
+  try
+    let l:result = semantic_ctags_diff#symbol_at(line('.'), a:kind_filter)
+  catch /.*/
+    echoerr v:exception
+    return
+  endtry
+
+  if empty(get(l:result, 'symbol', {}))
+    echoerr 'semantic_ctags_diff: no matching symbol under cursor'
+    return
+  endif
+
+  let l:limit = get(l:result, 'flog_limit', '')
+  if empty(l:limit)
+    echoerr 'semantic_ctags_diff: symbol has no flog line range'
+    return
+  endif
+
+  echo 'Flog history for ' . get(l:result, 'label', '') . ' [' . l:limit . ']'
+  execute a:open_cmd . ' -limit=' . fnameescape(l:limit)
 endfunction
