@@ -93,7 +93,7 @@ _Text placeholders — add screenshots under `docs/screenshots/` when available.
 |------|----------|
 | Vim 8+ | Yes |
 | Git | Yes |
-| Python 3 + `semantic-branch-diff` | Yes |
+| Python 3 + PyDriller + python-ctags3 | Yes (importable; no pip install of this repo) |
 | Universal Ctags (or Exuberant) | Yes — classic tags file, **not** JSON output |
 | vim-fugitive | Recommended |
 | vim-flog | Optional |
@@ -110,7 +110,6 @@ Then:
 
 ```bash
 git submodule update --init --recursive
-pip install -e submodules/semantic-ctags-diff
 ```
 
 Inside Vim:
@@ -119,6 +118,17 @@ Inside Vim:
 :helptags /path/to/plugin/doc
 :help semantic-ctags-diff
 ```
+
+No `pip install` of `semantic-branch-diff` is required. The plugin runs the
+submodule source directly:
+
+```bash
+PYTHONPATH=submodules/semantic-ctags-diff python3 -m semantic_branch_diff.cli ...
+```
+
+Python still needs importable **PyDriller** and **python-ctags3** (system packages,
+your own venv, or `submodules/semantic-ctags-diff/.venv/` if you create one for
+deps only).
 
 ### Pathogen / native package
 
@@ -134,8 +144,11 @@ let g:semantic_ctags_diff_use_fugitive_worktree = 1
 let g:semantic_ctags_diff_debug = 0
 let g:semantic_ctags_diff_open_cmd = 'botright new'
 
-" Optional: explicit Python project path
+" Optional: explicit Python source tree (default: auto-detect submodules/semantic-ctags-diff)
 " let g:semantic_ctags_diff_root = '/path/to/semantic-ctags-diff'
+
+" Optional: Python with PyDriller + python-ctags3 (or submodule .venv/bin/python3)
+" let g:semantic_ctags_diff_python = '/path/to/submodules/semantic-ctags-diff/.venv/bin/python3'
 
 " Optional: extra CLI flags
 " let g:semantic_ctags_diff_extra_args = ['--no-pydriller-methods']
@@ -248,7 +261,7 @@ flowchart LR
 See `:help semantic-ctags-diff-troubleshooting` for:
 
 - ctags not found
-- Python module not found
+- PyDriller / python-ctags3 import errors (not a missing pip install of this repo)
 - Submodule path missing
 - Wrong repo root in submodules
 - Empty results

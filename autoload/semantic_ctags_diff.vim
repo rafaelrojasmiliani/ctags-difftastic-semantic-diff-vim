@@ -78,6 +78,10 @@ function! semantic_ctags_diff#repo_root() abort
   return fnamemodify(l:lines[0], ':p')
 endfunction
 
+function! semantic_ctags_diff#_plugin_root() abort
+  return fnamemodify(expand('<sfile>:p'), ':h:h')
+endfunction
+
 function! semantic_ctags_diff#python_project_root() abort
   if !empty(g:semantic_ctags_diff_root)
     let l:root = fnamemodify(g:semantic_ctags_diff_root, ':p')
@@ -85,6 +89,12 @@ function! semantic_ctags_diff#python_project_root() abort
       throw 'semantic_ctags_diff: g:semantic_ctags_diff_root has no pyproject.toml: ' . l:root
     endif
     return l:root
+  endif
+
+  " Plugin checkout (submodules/ next to plugin/) — checked before Git repo root.
+  let l:found = semantic_ctags_diff#_find_python_root(semantic_ctags_diff#_plugin_root())
+  if !empty(l:found)
+    return l:found
   endif
 
   let l:found = semantic_ctags_diff#_find_python_root(semantic_ctags_diff#repo_root())
@@ -97,7 +107,7 @@ function! semantic_ctags_diff#python_project_root() abort
     return l:found
   endif
 
-  throw 'semantic_ctags_diff: Python project not found. Expected submodules/semantic-ctags-diff. Install with: pip install -e submodules/semantic-ctags-diff'
+  throw 'semantic_ctags_diff: Python sources not found (expected submodules/semantic-ctags-diff). Run: git submodule update --init --recursive'
 endfunction
 
 function! semantic_ctags_diff#_find_python_root(start) abort
@@ -157,22 +167,28 @@ function! semantic_ctags_diff#build_command(base, head, format) abort
   return l:prefix . ' ' . join(l:escaped_args, ' ')
 endfunction
 
+function! semantic_ctags_diff#_python_executable(py_root) abort
+  " Optional submodule venv (deps only — package itself is not pip-installed).
+  for l:candidate in [
+        \ a:py_root . '/.venv/bin/python3',
+        \ a:py_root . '/.venv/bin/python',
+        \ ]
+    if executable(l:candidate)
+      return l:candidate
+    endif
+  endfor
+  return g:semantic_ctags_diff_python
+endfunction
+
 function! semantic_ctags_diff#_cli_prefix(py_root) abort
   if !empty(g:semantic_ctags_diff_cli)
     return g:semantic_ctags_diff_cli
   endif
 
-  let l:venv_bin = a:py_root . '/.venv/bin/semantic-branch-diff'
-  if executable(l:venv_bin)
-    return shellescape(l:venv_bin)
-  endif
-
-  if executable('semantic-branch-diff')
-    return 'semantic-branch-diff'
-  endif
-
-  let l:python = shellescape(g:semantic_ctags_diff_python)
+  " Run from source tree: PYTHONPATH=<submodule> python -m semantic_branch_diff.cli
+  " No pip install of semantic-branch-diff required.
   let l:py_root_esc = shellescape(a:py_root)
+  let l:python = shellescape(semantic_ctags_diff#_python_executable(a:py_root))
   return 'PYTHONPATH=' . l:py_root_esc . ' ' . l:python . ' -m semantic_branch_diff.cli'
 endfunction
 

@@ -28,8 +28,11 @@ REQUIREMENTS                                *semantic-ctags-diff-requirements*
 Required:
   - Vim 8+
   - Git
-  - Python 3 with semantic-branch-diff installed
+  - Python 3 (PyDriller and python-ctags3 importable by that interpreter)
   - Universal Ctags (or Exuberant Ctags with reduced C++ metadata)
+
+The semantic-branch-diff package does not need to be pip-installed. The plugin
+runs submodules/semantic-ctags-diff via PYTHONPATH and python -m semantic_branch_diff.cli.
 
 Ctags does NOT need JSON output support. The Python tool writes a classic tags
 file (-f tags) and parses it with python-ctags3. Do not pass --output-format=json
@@ -57,9 +60,8 @@ INSTALLATION                                    *semantic-ctags-diff-install*
 
     git submodule update --init --recursive
 
-3. Install the Python package: >
-
-    pip install -e submodules/semantic-ctags-diff
+3. Ensure Python can import PyDriller and python-ctags3 (system packages or your
+   own virtualenv). The plugin does not require pip install of semantic-branch-diff.
 
 4. Generate help tags: >
 
@@ -127,10 +129,11 @@ g:semantic_ctags_diff_root                        *g:semantic_ctags_diff_root*
       submodules/semantic-ctags-diff relative to repo or file directory.
 
 g:semantic_ctags_diff_cli                         *g:semantic_ctags_diff_cli*
-      Optional explicit CLI executable. When empty, discovery tries:
-        .venv/bin/semantic-branch-diff
-        semantic-branch-diff on PATH
-        python3 -m semantic_branch_diff.cli with PYTHONPATH
+      Optional explicit shell prefix overriding the default module invocation.
+      When empty, the plugin runs: >
+        PYTHONPATH=<submodule> python3 -m semantic_branch_diff.cli
+      using g:semantic_ctags_diff_python, or submodules/semantic-ctags-diff/.venv/bin/python3
+      when that venv exists (deps-only venv; package install not required).
 
 g:semantic_ctags_diff_default_base                *g:semantic_ctags_diff_default_base*
       Default base ref. Default: 'main'
@@ -172,10 +175,16 @@ Repository root is resolved via:
   1. FugitiveWorkTree() when vim-fugitive is loaded
   2. git -C <file-dir-or-cwd> rev-parse --show-toplevel
 
-This matters inside Git submodules and nested submodules where .git may live
-under the parent repository's .git/modules/ tree but the worktree is separate.
+Python sources are resolved separately (no pip install required):
+  1. g:semantic_ctags_diff_root if set
+  2. submodules/semantic-ctags-diff next to the plugin directory
+  3. submodules/semantic-ctags-diff under the Git repo root
+  4. Walk upward from the current file directory
 
-The --repo argument passed to semantic-branch-diff is always the detected
+Invocation (default): >
+  PYTHONPATH=<submodule> python3 -m semantic_branch_diff.cli --repo ... --base ... --head ...
+
+The --repo argument passed to semantic-branch-diff is always the detected Git
 worktree root.
 
 ==============================================================================
@@ -236,15 +245,17 @@ ctags JSON output not required ~
   Exuberant ctags build is sufficient. The semantic-branch-diff tool invokes
   ctags with -f and reads the classic tags file via python-ctags3.
 
-Python module not found ~
-  Install editable from the submodule: >
-    pip install -e submodules/semantic-ctags-diff
-  Or set g:semantic_ctags_diff_root to the project path.
+Python import errors (PyDriller / python-ctags3) ~
+  The submodule is run from source; only runtime libraries must be importable.
+  Use a Python that already has them, or a deps-only venv, e.g.: >
+    python3 -m venv submodules/semantic-ctags-diff/.venv
+    submodules/semantic-ctags-diff/.venv/bin/pip install pydriller python-ctags3
+  Or set g:semantic_ctags_diff_python to your interpreter path.
 
 submodules/semantic-ctags-diff not found ~
   Run: >
     git submodule update --init --recursive
-  Or set g:semantic_ctags_diff_root explicitly.
+  Or set g:semantic_ctags_diff_root to the semantic-ctags-diff source directory.
 
 Wrong repo root inside submodule ~
   Install vim-fugitive or verify: >
