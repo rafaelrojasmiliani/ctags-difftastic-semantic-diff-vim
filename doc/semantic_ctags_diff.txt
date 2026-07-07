@@ -299,7 +299,22 @@ Not included in this plugin:
 ==============================================================================
 MAPPINGS                                      *semantic-ctags-diff-mappings*
 
-No mappings are defined by default. Suggested mappings: >
+Report buffer maps ~
+  Inside the :SemanticCtagsDiff Markdown report, buffer-local maps jump from a
+  symbol line to its source (mirroring vim-fugitive):
+
+    <CR>   open the symbol in the current window
+    o      open in a horizontal split
+    gO     open in a vertical split
+    O      open in a new tab
+
+  Added / modified symbols open the working-tree file at the symbol line,
+  falling back to :Gedit <head>:<path> when the file is not in the current
+  checkout. Removed symbols open :Gedit <base>:<path> (the base commit where
+  the symbol still exists). Added symbols use the cached JSON for their path,
+  and the fugitive fallback requires vim-fugitive.
+
+No global mappings are defined by default. Suggested mappings: >
 
     nnoremap <leader>sd :SemanticCtagsDiff<CR>
     nnoremap <leader>sj :SemanticCtagsDiffJson<CR>

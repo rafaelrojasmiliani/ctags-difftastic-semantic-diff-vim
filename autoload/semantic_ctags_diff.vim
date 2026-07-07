@@ -314,6 +314,18 @@ function! semantic_ctags_diff#run(base, head, format) abort
   endif
 
   call semantic_ctags_diff#open_scratch(l:title, l:body, l:ft)
+  if a:format !=# 'json'
+    call semantic_ctags_diff#_setup_nav_maps()
+  endif
+endfunction
+
+" Buffer-local maps to jump from a symbol to its source, mirroring vim-fugitive
+" conventions (<CR> same window, o split, gO vsplit, O tab).
+function! semantic_ctags_diff#_setup_nav_maps() abort
+  nnoremap <buffer><silent> <CR> :call semantic_ctags_diff#open_symbol_under_cursor('edit')<CR>
+  nnoremap <buffer><silent> o    :call semantic_ctags_diff#open_symbol_under_cursor('split')<CR>
+  nnoremap <buffer><silent> gO   :call semantic_ctags_diff#open_symbol_under_cursor('vsplit')<CR>
+  nnoremap <buffer><silent> O    :call semantic_ctags_diff#open_symbol_under_cursor('tab')<CR>
 endfunction
 
 function! semantic_ctags_diff#run_markdown(base, head) abort
@@ -692,4 +704,195 @@ function! semantic_ctags_diff#flog_current_symbol(open_cmd, kind_filter) abort
   echo 'Flog history for ' . get(l:result, 'label', '') . ' [' . l:limit . ']'
   call semantic_ctags_diff#_dbg('flog symbol: ' . a:open_cmd . ' -limit=' . l:limit)
   execute a:open_cmd . ' -limit=' . fnameescape(l:limit)
+endfunction
+
+" --- Jump to symbol source from the markdown report -------------------------
+
+" Find which section header (added/removed/modified/file_scope) encloses lnum.
+function! s:section_for_line(lnum) abort
+  let l:l = a:lnum
+  while l:l >= 1
+    let l:t = getline(l:l)
+    if l:t ==# 'Added symbols'
+      return 'added'
+    elseif l:t ==# 'Removed symbols'
+      return 'removed'
+    elseif l:t ==# 'Modified symbols'
+      return 'modified'
+    elseif l:t ==# 'File-scope changes'
+      return 'file_scope'
+    endif
+    let l:l -= 1
+  endwhile
+  return ''
+endfunction
+
+" First integer in a "range: 10-34" / "new range: 10-34" / "added lines: 1, 2".
+function! s:first_int(text) abort
+  let l:m = matchstr(a:text, '\d\+')
+  return empty(l:m) ? 1 : str2nr(l:m)
+endfunction
+
+" Nearest bare file-path header above lnum (a non-blank line that is not a
+" symbol marker, indented field, or section underline).
+function! s:file_header_above(lnum) abort
+  let l:l = a:lnum
+  while l:l >= 1
+    let l:t = getline(l:l)
+    if l:t =~# '^\S' && l:t !~# '^\*' && l:t !~# '^[-=]\+$'
+          \ && l:t !~# '^\%(Added\|Removed\|Modified\|File-scope\) '
+          \ && index(['Added symbols', 'Removed symbols', 'Modified symbols', 'File-scope changes'], l:t) < 0
+      return l:t
+    endif
+    let l:l -= 1
+  endwhile
+  return ''
+endfunction
+
+" Look up an added symbol's path/line from the cached JSON by qualified name.
+function! s:lookup_added(qname) abort
+  if type(s:last_json) != v:t_dict || !has_key(s:last_json, 'files')
+    return {}
+  endif
+  for l:f in s:last_json.files
+    for l:s in get(l:f, 'added_symbols', [])
+      if get(l:s, 'qualified_name', get(l:s, 'name', '')) ==# a:qname
+        let l:rng = get(l:s, 'range', [get(l:s, 'line', 1)])
+        return {
+              \ 'path': get(l:s, 'path', get(l:f, 'path', '')),
+              \ 'line': empty(l:rng) ? 1 : l:rng[0],
+              \ 'classification': 'added',
+              \ }
+      endif
+    endfor
+  endfor
+  return {}
+endfunction
+
+" Resolve {path, line, classification} for the symbol under the cursor, or {}.
+function! semantic_ctags_diff#_target_at_cursor() abort
+  let l:section = s:section_for_line(line('.'))
+  if empty(l:section)
+    return {}
+  endif
+
+  if l:section ==# 'added'
+    " Added symbols are grouped by kind as "  + qualified_name" with no path
+    " in the Markdown, so resolve the path/line from the cached JSON.
+    let l:l = line('.')
+    while l:l >= 1 && getline(l:l) !~# '^\s*+ '
+      let l:l -= 1
+    endwhile
+    let l:qname = matchstr(getline(l:l), '^\s*+ \zs.*$')
+    if empty(l:qname)
+      return {}
+    endif
+    return s:lookup_added(l:qname)
+  endif
+
+  if l:section ==# 'file_scope'
+    let l:path = s:file_header_above(line('.'))
+    if empty(l:path)
+      return {}
+    endif
+    let l:line = 1
+    let l:added = search('^\* added lines:', 'bcnW')
+    if l:added > 0 && s:file_header_above(l:added) ==# l:path
+      let l:line = s:first_int(getline(l:added))
+    endif
+    return {'path': l:path, 'line': l:line, 'classification': 'file_scope'}
+  endif
+
+  " removed / modified: find the enclosing "* kind name" block.
+  let l:start = line('.')
+  while l:start >= 1 && getline(l:start) !~# '^\* '
+    let l:start -= 1
+  endwhile
+  if l:start < 1 || getline(l:start) !~# '^\* '
+    return {}
+  endif
+
+  if l:section ==# 'removed'
+    let l:path = ''
+    let l:line = 1
+    let l:l = l:start + 1
+    while l:l <= line('$') && getline(l:l) =~# '^  '
+      let l:t = getline(l:l)
+      if l:t =~# '^  file: '
+        let l:path = matchstr(l:t, '^  file: \zs.*$')
+      elseif l:t =~# '^  range: '
+        let l:line = s:first_int(l:t)
+      endif
+      let l:l += 1
+    endwhile
+    if empty(l:path)
+      return {}
+    endif
+    return {'path': l:path, 'line': l:line, 'classification': 'removed'}
+  endif
+
+  " modified
+  let l:path = s:file_header_above(l:start)
+  if empty(l:path)
+    return {}
+  endif
+  let l:line = 1
+  let l:l = l:start + 1
+  while l:l <= line('$') && getline(l:l) =~# '^  '
+    if getline(l:l) =~# '^  new range: '
+      let l:line = s:first_int(getline(l:l))
+      break
+    endif
+    let l:l += 1
+  endwhile
+  return {'path': l:path, 'line': l:line, 'classification': 'modified'}
+endfunction
+
+function! s:open_working(abs, line, mode) abort
+  let l:cmds = {'edit': 'edit', 'split': 'split', 'vsplit': 'vsplit', 'tab': 'tabedit'}
+  execute get(l:cmds, a:mode, 'edit') . ' ' . fnameescape(a:abs)
+  call cursor(a:line, 1)
+  normal! zz
+endfunction
+
+function! s:open_fugitive(rev, path, line, mode) abort
+  if exists(':Gedit') != 2
+    echoerr 'semantic_ctags_diff: vim-fugitive required to open ' . a:rev . ':' . a:path
+    return
+  endif
+  let l:cmds = {'edit': 'Gedit', 'split': 'Gsplit', 'vsplit': 'Gvsplit', 'tab': 'Gtabedit'}
+  let l:obj = a:rev . ':' . a:path
+  call semantic_ctags_diff#_dbg('open fugitive object: ' . l:obj)
+  execute get(l:cmds, a:mode, 'Gedit') . ' ' . fnameescape(l:obj)
+  call cursor(a:line, 1)
+  normal! zz
+endfunction
+
+function! semantic_ctags_diff#open_symbol_under_cursor(mode) abort
+  let l:target = semantic_ctags_diff#_target_at_cursor()
+  if empty(l:target)
+    echo 'semantic_ctags_diff: no symbol under cursor'
+    return
+  endif
+
+  let l:repo = !empty(s:last_repo) ? s:last_repo : semantic_ctags_diff#repo_root()
+  let l:abs = simplify(l:repo . '/' . l:target.path)
+
+  " Removed symbols no longer exist in the working tree: open them from the
+  " base commit via fugitive. Added/modified symbols live in head, so prefer
+  " the on-disk working file and fall back to the head commit when the current
+  " checkout does not have it.
+  if l:target.classification ==# 'removed'
+    if empty(s:last_base)
+      echoerr 'semantic_ctags_diff: no base ref recorded; run a diff first'
+      return
+    endif
+    call s:open_fugitive(s:last_base, l:target.path, l:target.line, a:mode)
+  elseif filereadable(l:abs)
+    call s:open_working(l:abs, l:target.line, a:mode)
+  elseif !empty(s:last_head)
+    call s:open_fugitive(s:last_head, l:target.path, l:target.line, a:mode)
+  else
+    echoerr 'semantic_ctags_diff: file not found in working tree: ' . l:abs
+  endif
 endfunction

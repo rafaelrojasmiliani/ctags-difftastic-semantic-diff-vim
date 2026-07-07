@@ -238,6 +238,36 @@ Notes:
 - Configure via `g:semantic_ctags_diff_difftastic_display` (`side-by-side` or
   `inline`) and `g:semantic_ctags_diff_difftastic_context`.
 
+## Jump to a symbol from the report
+
+In the `:SemanticCtagsDiff` (Markdown) report, press a key on any symbol line to
+open its source, mirroring vim-fugitive conventions:
+
+| Key | Opens the symbol in |
+|-----|---------------------|
+| `<CR>` | current window |
+| `o` | horizontal split |
+| `gO` | vertical split |
+| `O` | new tab |
+
+Where it opens depends on the change type:
+
+- **Added / modified** symbols live in `head`, so the on-disk **working-tree**
+  file is opened at the symbol's line. If the current checkout does not contain
+  that file, it falls back to `:Gedit <head>:<path>` (fugitive) — the file as it
+  exists in the head commit.
+- **Removed** symbols no longer exist in the working tree, so they open with
+  `:Gedit <base>:<path>` — the file at the base commit where the symbol still
+  exists.
+
+Added symbols resolve their path/line from the cached JSON, so run a diff first
+(the JSON is fetched automatically after `:SemanticCtagsDiff`). The fugitive
+fallback and removed-symbol view require **vim-fugitive**.
+
+> ponytail: added/modified jumps assume your checkout is at `head`. On a
+> different checkout the working file opens but the line may be slightly off;
+> use `:Gedit <head>:<path>` for the exact head version.
+
 ## Vim / Fugitive / Flog integration
 
 ### Fugitive
