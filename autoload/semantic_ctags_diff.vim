@@ -11,7 +11,7 @@ let s:last_command = ''
 let s:last_scratch_bufnr = -1
 let s:last_json = {}
 let s:debug_log = []
-let s:ref_cache = {}
+let s:ref_cache = []
 let s:ref_cache_repo = ''
 
 " Submodule relative paths (primary + typo fallback).
@@ -451,11 +451,13 @@ function! semantic_ctags_diff#complete_ref(arglead, cmdline, cursorpos) abort
     let l:repo = semantic_ctags_diff#repo_root()
 
     if s:ref_cache_repo !=# l:repo
-      let s:ref_cache_repo = l:repo
       let l:cmd = 'git -C ' . shellescape(l:repo)
             \ . ' for-each-ref --format=%(refname:short) refs/heads refs/remotes 2>/dev/null'
       let l:refs = systemlist(l:cmd)
       let s:ref_cache = type(l:refs) == v:t_list ? l:refs : []
+      " Mark cached only after a successful populate, so a transient failure
+      " (e.g. E282 temp-dir error) does not poison the cache with stale data.
+      let s:ref_cache_repo = l:repo
     endif
 
     if empty(a:arglead)
