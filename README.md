@@ -1,12 +1,20 @@
 # vim-semantic-ctags-diff
 
-Vim 8 plugin that runs **semantic branch diffs** from your editor by calling the
-[semantic-branch-diff](https://github.com/rafaelrojasmiliani/semantic-ctags-diff)
-Python tool (PyDriller + ctags). Results open in scratch buffers as Markdown or
-JSON.
+Vim 8 plugin with two complementary features:
+
+1. **Semantic branch diffs** — calls the
+   [semantic-branch-diff](https://github.com/rafaelrojasmiliani/semantic-ctags-diff)
+   Python tool (PyDriller + ctags) and opens the result in Markdown/JSON scratch
+   buffers.
+2. **Difftastic in Vim** — a Fugitive-style file diff rendered with
+   [difftastic](https://github.com/Wilfred/difftastic) (`difft`) via
+   `:Gdifftastic` / `:Gvdifftastic`. This ports difftastic's structural diff into
+   a Vim scratch window.
 
 Works with **vim-fugitive** worktree detection (submodules) and optional
-**vim-flog** log navigation.
+**vim-flog** log navigation. The two features are independent: difftastic needs
+only `git` + `difft`, and the Python module gracefully handles difftastic being
+absent.
 
 **Ctags note:** This plugin does **not** require ctags built with JSON output
 (`--output-format=json`). The Python tool runs ordinary ctags (`-f tags`) and
@@ -93,10 +101,14 @@ _Text placeholders — add screenshots under `docs/screenshots/` when available.
 |------|----------|
 | Vim 8+ | Yes |
 | Git | Yes |
-| Python 3 + PyDriller + python-ctags3 | Yes (importable; no pip install of this repo) |
-| Universal Ctags (or Exuberant) | Yes — classic tags file, **not** JSON output |
+| Python 3 + PyDriller + python-ctags3 | For semantic diff (importable; no pip install of this repo) |
+| Universal Ctags (or Exuberant) | For semantic diff — classic tags file, **not** JSON output |
+| difftastic (`difft`) | For `:Gdifftastic` / `:Gvdifftastic` only |
 | vim-fugitive | Recommended |
 | vim-flog | Optional |
+
+The semantic diff and difftastic features are independent — you can use
+`:Gdifftastic` with only `git` + `difft`, even without Python or ctags.
 
 ## Installation
 
@@ -152,6 +164,11 @@ let g:semantic_ctags_diff_open_cmd = 'botright new'
 
 " Optional: extra CLI flags
 " let g:semantic_ctags_diff_extra_args = ['--no-pydriller-methods']
+
+" Difftastic (:Gdifftastic / :Gvdifftastic)
+let g:semantic_ctags_diff_difft = 'difft'
+let g:semantic_ctags_diff_difftastic_display = 'side-by-side'  " or 'inline'
+let g:semantic_ctags_diff_difftastic_context = 3
 ```
 
 Python project auto-detection looks for:
@@ -174,6 +191,8 @@ Python project auto-detection looks for:
 | `:SemanticCtagsDiffClearDebugLog` | Clear debug log |
 | `:SemanticCtagsDiffFlog` | Flog companion (if flog installed) |
 | `:SemanticCtagsDiffFlogSymbol` | Pick symbol → Flog history (if flog installed) |
+| `:Gdifftastic [ref]` | Difftastic diff of current file vs `ref` (default `HEAD`), horizontal split |
+| `:Gvdifftastic [ref]` | Same, vertical split |
 
 ### Suggested mappings (not installed by default)
 
@@ -182,7 +201,40 @@ nnoremap <leader>sd :SemanticCtagsDiff<CR>
 nnoremap <leader>sj :SemanticCtagsDiffJson<CR>
 nnoremap <leader>sr :SemanticCtagsDiffRefresh<CR>
 nnoremap <leader>sl :SemanticCtagsDiffDebugLog<CR>
+nnoremap <leader>dt :Gvdifftastic<CR>
 ```
+
+## Difftastic in Vim
+
+This plugin also **ports difftastic into Vim** as a Fugitive-style file diff.
+`difft` is a structural (syntax-aware) diff tool; these commands run it as git's
+external diff and render the result in a scratch buffer.
+
+| Command | Effect |
+|---------|--------|
+| `:Gdifftastic` | Difftastic diff of the current file vs `HEAD`, horizontal split |
+| `:Gdifftastic origin/main` | vs any ref (branch, tag, commit) |
+| `:Gvdifftastic [ref]` | Same, vertical split |
+
+Under the hood it runs, for the current file:
+
+```bash
+DFT_DISPLAY=side-by-side DFT_COLOR=never \
+  git -C <worktree> -c diff.external=difft --no-pager diff --ext-diff <ref> -- <file>
+```
+
+So difftastic receives the old/new blobs straight from git, exactly like
+`:Gdiffsplit` does for a normal diff. Output is a read-only scratch buffer with a
+header (file, ref, repo, exact command).
+
+Notes:
+
+- Requires `difft` on `PATH` (or set `g:semantic_ctags_diff_difft`).
+- Independent of the Python module and ctags — works with only `git` + `difft`.
+- The commands are defined only if not already present, so they won't clobber
+  your own `:Gdifftastic` mapping.
+- Configure via `g:semantic_ctags_diff_difftastic_display` (`side-by-side` or
+  `inline`) and `g:semantic_ctags_diff_difftastic_context`.
 
 ## Vim / Fugitive / Flog integration
 
@@ -230,7 +282,8 @@ semantic-branch-diff --symbol-at --file path.cpp --line 42 --kind function
 | `flog_limit` strings | Yes (`navigation.py`) | Uses JSON field |
 | Repo worktree detection | — | Yes (Fugitive / git) |
 | Flog UI / colors | — | Yes |
-| Difftastic / Fugitive commit prompts | — | Not included (see `files` reference) |
+| Difftastic file diff (`:Gdifftastic`) | — | Yes (git external diff → scratch) |
+| Fugitive commit-prompt difftastic context | — | Not included (see `files` reference) |
 
 This plugin does **not** define Flogsplit commands if you already have custom ones.
 
@@ -255,6 +308,8 @@ flowchart LR
 - No default mappings.
 - `:SemanticCtagsDiffFlogSymbol` requires a prior diff (JSON cache is fetched
   automatically after Markdown runs).
+- `:Gdifftastic` renders difftastic's **plain-text** output in a scratch buffer
+  (no ANSI colors, not true `vimdiff` mode); it needs `difft` installed.
 
 ## Troubleshooting
 
