@@ -20,6 +20,12 @@ let s:submodule_paths = [
       \ 'submodules/sematic-ctags-diff',
       \]
 
+" Absolute plugin root, captured at script load time.
+" NOTE: <sfile> must be expanded here (script scope), NOT inside a function —
+" inside a :function it expands to the function name, not the script path.
+" autoload/semantic_ctags_diff.vim -> :h (autoload) -> :h (plugin root).
+let s:plugin_root = fnamemodify(expand('<sfile>:p'), ':h:h')
+
 " --- Command entry points ---------------------------------------------------
 
 function! semantic_ctags_diff#cmd_diff(args) abort
@@ -78,36 +84,61 @@ function! semantic_ctags_diff#repo_root() abort
   return fnamemodify(l:lines[0], ':p')
 endfunction
 
+function! semantic_ctags_diff#_dbg(msg) abort
+  if get(g:, 'semantic_ctags_diff_debug', 0)
+    call semantic_ctags_diff#debug(a:msg)
+  endif
+endfunction
+
 function! semantic_ctags_diff#_plugin_root() abort
-  return fnamemodify(expand('<sfile>:p'), ':h:h')
+  return s:plugin_root
 endfunction
 
 function! semantic_ctags_diff#python_project_root() abort
   if !empty(g:semantic_ctags_diff_root)
     let l:root = fnamemodify(g:semantic_ctags_diff_root, ':p')
+    call semantic_ctags_diff#_dbg('python_project_root: g:semantic_ctags_diff_root = ' . l:root)
     if !filereadable(l:root . '/pyproject.toml')
       throw 'semantic_ctags_diff: g:semantic_ctags_diff_root has no pyproject.toml: ' . l:root
     endif
     return l:root
   endif
 
-  " Plugin checkout (submodules/ next to plugin/) — checked before Git repo root.
-  let l:found = semantic_ctags_diff#_find_python_root(semantic_ctags_diff#_plugin_root())
+  " Search order: plugin checkout (submodules/ next to plugin/), then the Git
+  " repo of the current file, then upward from the current file directory.
+  let l:plugin_root = semantic_ctags_diff#_plugin_root()
+  call semantic_ctags_diff#_dbg('python_project_root: plugin_root = ' . l:plugin_root)
+  let l:found = semantic_ctags_diff#_find_python_root(l:plugin_root)
   if !empty(l:found)
+    call semantic_ctags_diff#_dbg('python_project_root: found via plugin_root -> ' . l:found)
     return l:found
   endif
 
-  let l:found = semantic_ctags_diff#_find_python_root(semantic_ctags_diff#repo_root())
+  let l:repo = ''
+  try
+    let l:repo = semantic_ctags_diff#repo_root()
+  catch /.*/
+    call semantic_ctags_diff#_dbg('python_project_root: repo_root() failed: ' . v:exception)
+  endtry
+  if !empty(l:repo)
+    call semantic_ctags_diff#_dbg('python_project_root: repo_root = ' . l:repo)
+    let l:found = semantic_ctags_diff#_find_python_root(l:repo)
+    if !empty(l:found)
+      call semantic_ctags_diff#_dbg('python_project_root: found via repo_root -> ' . l:found)
+      return l:found
+    endif
+  endif
+
+  let l:start = semantic_ctags_diff#_start_dir()
+  call semantic_ctags_diff#_dbg('python_project_root: start_dir = ' . l:start)
+  let l:found = semantic_ctags_diff#_find_python_root(l:start)
   if !empty(l:found)
+    call semantic_ctags_diff#_dbg('python_project_root: found via start_dir -> ' . l:found)
     return l:found
   endif
 
-  let l:found = semantic_ctags_diff#_find_python_root(semantic_ctags_diff#_start_dir())
-  if !empty(l:found)
-    return l:found
-  endif
-
-  throw 'semantic_ctags_diff: Python sources not found (expected submodules/semantic-ctags-diff). Run: git submodule update --init --recursive'
+  call semantic_ctags_diff#_dbg('python_project_root: NOT FOUND (checked plugin_root, repo_root, start_dir)')
+  throw 'semantic_ctags_diff: Python sources not found (expected submodules/semantic-ctags-diff under ' . l:plugin_root . '). Run: git submodule update --init --recursive'
 endfunction
 
 function! semantic_ctags_diff#_find_python_root(start) abort
@@ -116,6 +147,7 @@ function! semantic_ctags_diff#_find_python_root(start) abort
     for l:rel in s:submodule_paths
       let l:candidate = simplify(l:dir . '/' . l:rel)
       if filereadable(l:candidate . '/pyproject.toml')
+        call semantic_ctags_diff#_dbg('_find_python_root: matched ' . l:candidate)
         return l:candidate
       endif
     endfor
@@ -125,6 +157,7 @@ function! semantic_ctags_diff#_find_python_root(start) abort
     endif
     let l:dir = l:parent
   endwhile
+  call semantic_ctags_diff#_dbg('_find_python_root: no submodule under ' . a:start)
   return ''
 endfunction
 
