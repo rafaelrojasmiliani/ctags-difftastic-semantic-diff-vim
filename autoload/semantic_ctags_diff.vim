@@ -444,23 +444,28 @@ endfunction
 " --- Ref completion ---------------------------------------------------------
 
 function! semantic_ctags_diff#complete_ref(arglead, cmdline, cursorpos) abort
+  " A customlist completion function MUST always return a List; any thrown
+  " error (e.g. E282 if Vim's temp dir is missing) would otherwise make Vim
+  " substitute 0 and raise E1303. Wrap everything and degrade to no matches.
   try
     let l:repo = semantic_ctags_diff#repo_root()
+
+    if s:ref_cache_repo !=# l:repo
+      let s:ref_cache_repo = l:repo
+      let l:cmd = 'git -C ' . shellescape(l:repo)
+            \ . ' for-each-ref --format=%(refname:short) refs/heads refs/remotes 2>/dev/null'
+      let l:refs = systemlist(l:cmd)
+      let s:ref_cache = type(l:refs) == v:t_list ? l:refs : []
+    endif
+
+    if empty(a:arglead)
+      return s:ref_cache
+    endif
+    return filter(copy(s:ref_cache), 'v:val =~# ''^'' . escape(a:arglead, ''\'')')
   catch /.*/
+    call semantic_ctags_diff#_dbg('complete_ref failed: ' . v:exception)
     return []
   endtry
-
-  if s:ref_cache_repo !=# l:repo
-    let s:ref_cache_repo = l:repo
-    let l:cmd = 'git -C ' . shellescape(l:repo)
-          \ . ' for-each-ref --format=%(refname:short) refs/heads refs/remotes 2>/dev/null'
-    let s:ref_cache = systemlist(l:cmd)
-  endif
-
-  if empty(a:arglead)
-    return s:ref_cache
-  endif
-  return filter(copy(s:ref_cache), 'v:val =~# ''^'' . escape(a:arglead, ''\'')')
 endfunction
 
 " --- Flog integration (optional) --------------------------------------------
