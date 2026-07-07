@@ -62,7 +62,7 @@ endfunction
 " --- Repo and Python project discovery --------------------------------------
 
 function! semantic_ctags_diff#repo_root() abort
-  if g:semantic_ctags_diff_use_fugitive_worktree && exists('*FugitiveWorkTree')
+  if get(g:, 'semantic_ctags_diff_use_fugitive_worktree', 1) && exists('*FugitiveWorkTree')
     let l:worktree = FugitiveWorkTree()
     if !empty(l:worktree)
       return fnamemodify(l:worktree, ':p')

@@ -7,6 +7,7 @@ Introduction                                    |semantic-ctags-diff-intro|
 Requirements                                    |semantic-ctags-diff-requirements|
 Installation                                    |semantic-ctags-diff-install|
 Commands                                        |semantic-ctags-diff-commands|
+Difftastic                                      |semantic-ctags-diff-difftastic|
 Configuration                                   |semantic-ctags-diff-config|
 Submodules                                      |semantic-ctags-diff-submodules|
 Fugitive and Flog                               |semantic-ctags-diff-integration|
@@ -16,20 +17,31 @@ Troubleshooting                                 |semantic-ctags-diff-troubleshoo
 ==============================================================================
 INTRODUCTION                                    *semantic-ctags-diff-intro*
 
-vim-semantic-ctags-diff runs semantic branch diffs from Vim by calling the
-external Python tool semantic-branch-diff (PyDriller + ctags). Results open in
-scratch buffers as Markdown or JSON.
+vim-semantic-ctags-diff provides two independent features:
 
-The plugin is compatible with Vim 8. It does not require Neovim or Lua.
+1. Semantic branch diffs — calls the external Python tool semantic-branch-diff
+   (PyDriller + ctags) and opens Markdown/JSON scratch buffers.
+
+2. Difftastic in Vim — a Fugitive-style file diff rendered with difftastic
+   (difft) via :Gdifftastic and :Gvdifftastic. This ports difftastic's
+   structural diff into a Vim scratch window.
+
+The plugin is compatible with Vim 8. It does not require Neovim or Lua. The two
+features are independent: difftastic needs only git + difft, and the Python
+module gracefully handles difftastic being absent.
 
 ==============================================================================
 REQUIREMENTS                                *semantic-ctags-diff-requirements*
 
-Required:
+Required for semantic diff:
   - Vim 8+
   - Git
   - Python 3 (PyDriller and python-ctags3 importable by that interpreter)
   - Universal Ctags (or Exuberant Ctags with reduced C++ metadata)
+
+Required for :Gdifftastic / :Gvdifftastic:
+  - Git
+  - difftastic (difft) on PATH
 
 The semantic-branch-diff package does not need to be pip-installed. The plugin
 runs submodules/semantic-ctags-diff via PYTHONPATH and python -m semantic_branch_diff.cli.
@@ -118,6 +130,43 @@ COMMANDS                                        *semantic-ctags-diff-commands*
       (vim-flog only) Pick a modified symbol from the last JSON result and
       open line-range history via your :Flogsplit* commands when available.
 
+:Gdifftastic [ref]                                *:Gdifftastic*
+      Difftastic diff of the current file against [ref] (default HEAD), in a
+      horizontal scratch split. See |semantic-ctags-diff-difftastic|.
+
+:Gvdifftastic [ref]                               *:Gvdifftastic*
+      Same as :Gdifftastic, in a vertical split.
+
+==============================================================================
+DIFFTASTIC                                      *semantic-ctags-diff-difftastic*
+
+This plugin ports difftastic (a structural, syntax-aware diff tool) into Vim.
+:Gdifftastic and :Gvdifftastic mirror Fugitive's file diff, but render the diff
+with difft instead of Vim's line-based diff.
+
+They run, for the current file: >
+
+    DFT_DISPLAY=<display> DFT_COLOR=never \
+      git -C <worktree> -c diff.external=difft --no-pager diff --ext-diff <ref> \
+      -- <file>
+
+difftastic receives the old/new blobs directly from git, so the result matches
+what Fugitive would diff. Output opens in a read-only scratch buffer with a
+header (file, ref, repo, exact command).
+
+Requirements and notes:
+  - difft must be on PATH (or set g:semantic_ctags_diff_difft).
+  - Works with only git + difft; no Python or ctags needed.
+  - Commands are defined only if not already present, so a custom :Gdifftastic
+    is never overridden.
+  - Output is plain text (no ANSI colors); this is not true vimdiff mode.
+
+Examples: >
+
+    :Gdifftastic
+    :Gvdifftastic origin/main
+    :Gdifftastic HEAD~3
+
 ==============================================================================
 CONFIGURATION                                   *semantic-ctags-diff-config*
 
@@ -162,11 +211,21 @@ g:semantic_ctags_diff_use_fugitive_worktree       *g:semantic_ctags_diff_use_fug
 g:semantic_ctags_diff_extra_args                  *g:semantic_ctags_diff_extra_args*
       List of extra CLI arguments appended to the command.
 
+g:semantic_ctags_diff_difft                       *g:semantic_ctags_diff_difft*
+      difftastic executable for :Gdifftastic. Default: 'difft'
+
+g:semantic_ctags_diff_difftastic_display          *g:semantic_ctags_diff_difftastic_display*
+      DFT_DISPLAY value: 'side-by-side' or 'inline'. Default: 'side-by-side'
+
+g:semantic_ctags_diff_difftastic_context          *g:semantic_ctags_diff_difftastic_context*
+      DFT_CONTEXT lines around each change. Default: 3
+
 Example ~/.vimrc: >
 
     let g:semantic_ctags_diff_default_base = 'develop'
     let g:semantic_ctags_diff_debug = 1
     let g:semantic_ctags_diff_extra_args = ['--no-pydriller-methods']
+    let g:semantic_ctags_diff_difftastic_display = 'inline'
 
 ==============================================================================
 SUBMODULES                                  *semantic-ctags-diff-submodules*
@@ -217,6 +276,7 @@ Python (semantic-branch-diff):
 
 Vim plugin:
   - Editor integration, scratch buffers, Fugitive worktree, Flog UI
+  - Difftastic file diff (:Gdifftastic) via git external diff
   - Does not re-implement ctags parsing from legacy files/ scripts
 
 Not included in this plugin:
@@ -232,6 +292,7 @@ No mappings are defined by default. Suggested mappings: >
     nnoremap <leader>sj :SemanticCtagsDiffJson<CR>
     nnoremap <leader>sr :SemanticCtagsDiffRefresh<CR>
     nnoremap <leader>sl :SemanticCtagsDiffDebugLog<CR>
+    nnoremap <leader>dt :Gvdifftastic<CR>
 
 ==============================================================================
 TROUBLESHOOTING                        *semantic-ctags-diff-troubleshooting*
@@ -244,6 +305,15 @@ ctags JSON output not required ~
   This plugin never uses ctags --output-format=json. A normal Universal or
   Exuberant ctags build is sufficient. The semantic-branch-diff tool invokes
   ctags with -f and reads the classic tags file via python-ctags3.
+
+difftastic (difft) not found ~
+  :Gdifftastic and :Gvdifftastic need difftastic on PATH. Install it (e.g.
+  brew install difftastic, cargo install difftastic) or set: >
+    let g:semantic_ctags_diff_difft = '/path/to/difft'
+
+:Gdifftastic shows no diff ~
+  The current buffer must be a saved file inside the Git worktree, and it must
+  differ from [ref] (default HEAD). Save the buffer first.
 
 Python import errors (PyDriller / python-ctags3) ~
   The submodule is run from source; only runtime libraries must be importable.
