@@ -470,8 +470,11 @@ function! semantic_ctags_diff#flog(base, head) abort
     echoerr 'semantic_ctags_diff: vim-flog is not installed'
     return
   endif
+  " vim-flog uses single-dash args parsed by splitting on spaces; -rev= runs
+  " `git log <range>`. Do NOT shellescape (quotes would reach git literally).
   let l:range = a:base . '..' . a:head
-  execute 'Flog --raw=' . shellescape(l:range)
+  call semantic_ctags_diff#_dbg('flog: Flog -rev=' . l:range)
+  execute 'Flog -rev=' . fnameescape(l:range)
 endfunction
 
 function! semantic_ctags_diff#flog_symbol() abort
