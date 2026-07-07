@@ -550,10 +550,30 @@ function! semantic_ctags_diff#_collect_symbol_choices(json) abort
   return l:choices
 endfunction
 
+" Resolve the flog command used to open history. Defaults to :Flog, which opens
+" a new tab (commit graph + diff), matching plain :Flog. Configurable via
+" g:semantic_ctags_diff_flog_open ('Flog' = tab, 'Flogsplit' = split, ...).
+" Falls back to whichever flog command actually exists.
+function! semantic_ctags_diff#_flog_open_cmd() abort
+  let l:pref = get(g:, 'semantic_ctags_diff_flog_open', 'Flog')
+  if exists(':' . l:pref) == 2
+    return l:pref
+  endif
+  if exists(':Flog') == 2
+    return 'Flog'
+  endif
+  if exists(':Flogsplit') == 2
+    return 'Flogsplit'
+  endif
+  return ''
+endfunction
+
 function! semantic_ctags_diff#_open_symbol_in_flog(choice) abort
-  if !empty(a:choice.flog_limit) && exists(':Flogsplit') == 2
-    echo 'Flog history for ' . get(a:choice, 'label', a:choice.name)
-    execute 'Flogsplit -limit=' . fnameescape(a:choice.flog_limit)
+  let l:open = semantic_ctags_diff#_flog_open_cmd()
+  if !empty(a:choice.flog_limit) && !empty(l:open)
+    echo 'Flog history for ' . get(a:choice, 'label', a:choice.name) . ' [' . a:choice.flog_limit . ']'
+    call semantic_ctags_diff#_dbg('flog picker: ' . l:open . ' -limit=' . a:choice.flog_limit)
+    execute l:open . ' -limit=' . fnameescape(a:choice.flog_limit)
     return
   endif
 
@@ -567,20 +587,8 @@ function! semantic_ctags_diff#_open_symbol_in_flog(choice) abort
 
   execute 'edit ' . fnameescape(l:abs_path)
   call cursor(a:choice.line, 1)
-
-  let l:kind = tolower(a:choice.kind)
-  if exists(':FlogsplitClass') == 2 && l:kind ==# 'class'
-    FlogsplitClass
-  elseif exists(':FlogsplitFunction') == 2 && (l:kind ==# 'function' || l:kind ==# 'method' || l:kind ==# 'member')
-    FlogsplitFunction
-  elseif exists(':FlogsplitNamespace') == 2 && l:kind ==# 'namespace'
-    FlogsplitNamespace
-  elseif exists(':FlogsplitSymbol') == 2
-    FlogsplitSymbol
-  else
-    echo 'semantic_ctags_diff: opened ' . a:choice.path . ' at line ' . a:choice.line
-    echo 'Install vim-flog or define :FlogsplitSymbol for line-range history.'
-  endif
+  echo 'semantic_ctags_diff: opened ' . a:choice.path . ' at line ' . a:choice.line
+  echo 'Install vim-flog for line-range history in a new tab.'
 endfunction
 
 " --- Symbol-at-line via Python (replaces Vim ctags parsing) -----------------
@@ -672,5 +680,6 @@ function! semantic_ctags_diff#flog_current_symbol(open_cmd, kind_filter) abort
   endif
 
   echo 'Flog history for ' . get(l:result, 'label', '') . ' [' . l:limit . ']'
+  call semantic_ctags_diff#_dbg('flog symbol: ' . a:open_cmd . ' -limit=' . l:limit)
   execute a:open_cmd . ' -limit=' . fnameescape(l:limit)
 endfunction

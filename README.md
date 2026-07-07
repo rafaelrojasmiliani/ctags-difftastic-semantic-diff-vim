@@ -190,7 +190,9 @@ Python project auto-detection looks for:
 | `:SemanticCtagsDiffDebugLog` | Open debug log |
 | `:SemanticCtagsDiffClearDebugLog` | Clear debug log |
 | `:SemanticCtagsDiffFlog` | Flog companion (if flog installed) |
-| `:SemanticCtagsDiffFlogSymbol` | Pick symbol → Flog history (if flog installed) |
+| `:SemanticCtagsDiffFlogSymbol` | Pick symbol → Flog history in a new tab (if flog installed) |
+| `:FlogSymbol` / `:FlogFunction` / `:FlogClass` / `:FlogNamespace` | Cursor symbol history in a **new tab** |
+| `:FlogsplitSymbol` / `:FlogsplitFunction` / ... | Cursor symbol history in a split |
 | `:Gdifftastic [ref]` | Difftastic diff of current file vs `ref` (default `HEAD`), horizontal split |
 | `:Gvdifftastic [ref]` | Same, vertical split |
 
@@ -257,16 +259,29 @@ companion (less semantic than the Python report).
 
 `:SemanticCtagsDiffFlogSymbol` lists **modified symbols** from the cached JSON
 result (using the Python `navigation` list when available), then opens Flog with
-`flog_limit` from the JSON.
+`flog_limit` from the JSON. By default it opens a **new tab** (commit graph +
+diff), exactly like plain `:Flog`. Set `g:semantic_ctags_diff_flog_open` to
+`'Flogsplit'` to open a split instead:
 
-### Flogsplit* commands (cursor symbol history)
+```vim
+let g:semantic_ctags_diff_flog_open = 'Flogsplit'  " default: 'Flog' (new tab)
+```
 
-When vim-flog is installed, `plugin/semantic_ctags_flog.vim` defines
-`:FlogsplitSymbol`, `:FlogsplitFunction`, etc. **only if you have not already
-defined them** (e.g. in a legacy `files` script).
+### Cursor symbol history: new tab vs split
 
-These call Python `symbol-at` mode — **no Vim ctags parsing**, and **no ctags
-JSON output** required:
+When vim-flog is installed, `plugin/semantic_ctags_flog.vim` defines two
+families for the symbol under the cursor, **only if you have not already
+defined them** (e.g. in a legacy `files` script):
+
+| Command | Opens |
+|---------|-------|
+| `:FlogSymbol`, `:FlogFunction`, `:FlogClass`, `:FlogNamespace` | **New tab** (commit graph + diff), like `:Flog` |
+| `:FlogsplitSymbol`, `:FlogsplitFunction`, `:FlogsplitClass`, `:FlogsplitNamespace` | Split of the current window |
+
+Use the `:Flog*` (tab) family when you want the commits and diffs in a separate
+view, the same way plain `:Flog` opens a dedicated tab. Both families call
+Python `symbol-at` mode — **no Vim ctags parsing**, and **no ctags JSON output**
+required:
 
 ```bash
 semantic-branch-diff --symbol-at --file path.cpp --line 42 --kind function

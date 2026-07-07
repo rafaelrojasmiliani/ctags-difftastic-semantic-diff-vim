@@ -11,9 +11,19 @@ if exists(':Flog') != 2 && exists(':Flogsplit') != 2
   finish
 endif
 
+" Flog command used by the :SemanticCtagsDiffFlogSymbol picker.
+" 'Flog' opens a NEW TAB (commit graph + diff), like plain :Flog.
+" 'Flogsplit' opens a split instead.
+let g:semantic_ctags_diff_flog_open =
+      \ get(g:, 'semantic_ctags_diff_flog_open', 'Flog')
+
 function! s:flog_symbol(open_cmd, kind_filter) abort
   call semantic_ctags_diff#flog_current_symbol(a:open_cmd, a:kind_filter)
 endfunction
+
+" Two families for the symbol under the cursor:
+"   :Flog*      -> open history in a NEW TAB (commit graph + diff), like :Flog
+"   :Flogsplit* -> open history in a split of the current window
 
 if exists(':FlogsplitSymbol') != 2
   command! -bar FlogsplitSymbol call s:flog_symbol('Flogsplit', '')

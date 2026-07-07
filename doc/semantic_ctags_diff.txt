@@ -128,7 +128,16 @@ COMMANDS                                        *semantic-ctags-diff-commands*
 
 :SemanticCtagsDiffFlogSymbol                      *:SemanticCtagsDiffFlogSymbol*
       (vim-flog only) Pick a modified symbol from the last JSON result and
-      open line-range history via your :Flogsplit* commands when available.
+      open its line-range history. By default this opens a NEW TAB (commit
+      graph + diff), like plain :Flog. Set g:semantic_ctags_diff_flog_open to
+      'Flogsplit' to open a split instead.
+
+:FlogSymbol / :FlogFunction / :FlogClass / :FlogNamespace   *:FlogSymbol*
+      (vim-flog only) History of the symbol under the cursor in a NEW TAB
+      (commit graph + diff), like :Flog. Defined only if not already defined.
+
+:FlogsplitSymbol / :FlogsplitFunction / ...        *:FlogsplitSymbol*
+      (vim-flog only) Same, but in a split of the current window.
 
 :Gdifftastic [ref]                                *:Gdifftastic*
       Difftastic diff of the current file against [ref] (default HEAD), in a
@@ -210,6 +219,10 @@ g:semantic_ctags_diff_use_fugitive_worktree       *g:semantic_ctags_diff_use_fug
 
 g:semantic_ctags_diff_extra_args                  *g:semantic_ctags_diff_extra_args*
       List of extra CLI arguments appended to the command.
+
+g:semantic_ctags_diff_flog_open                   *g:semantic_ctags_diff_flog_open*
+      Flog command used by :SemanticCtagsDiffFlogSymbol. 'Flog' opens a new
+      tab (commit graph + diff), 'Flogsplit' opens a split. Default: 'Flog'
 
 g:semantic_ctags_diff_difft                       *g:semantic_ctags_diff_difft*
       difftastic executable for :Gdifftastic. Default: 'difft'
