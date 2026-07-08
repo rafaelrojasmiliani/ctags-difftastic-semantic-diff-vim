@@ -225,9 +225,96 @@ function! semantic_ctags_diff#_cli_prefix(py_root) abort
   return 'PYTHONPATH=' . l:py_root_esc . ' ' . l:python . ' -m semantic_branch_diff.cli'
 endfunction
 
+" --- Result cache (/tmp, never in the workspace) ----------------------------
+
+function! semantic_ctags_diff#_cache_dir() abort
+  let l:dir = get(g:, 'semantic_ctags_diff_cache_dir', '/tmp/semantic_ctags_diff')
+  if !isdirectory(l:dir)
+    call mkdir(l:dir, 'p', 0700)
+  endif
+  return l:dir
+endfunction
+
+function! semantic_ctags_diff#_cache_fingerprint(py_root) abort
+  let l:parts = [
+        \ g:semantic_ctags_diff_ctags,
+        \ g:semantic_ctags_diff_include,
+        \ join(g:semantic_ctags_diff_extra_args, "\n"),
+        \ a:py_root,
+        \ semantic_ctags_diff#_python_executable(a:py_root),
+        \ g:semantic_ctags_diff_cli,
+        \ ]
+  return sha256(join(l:parts, "\0"))
+endfunction
+
+function! semantic_ctags_diff#_resolve_refs(repo, base, head) abort
+  let l:cmd = 'git -C ' . shellescape(a:repo)
+        \ . ' rev-parse ' . shellescape(a:base) . ' ' . shellescape(a:head)
+        \ . ' 2>/dev/null'
+  let l:lines = systemlist(l:cmd)
+  if v:shell_error != 0 || len(l:lines) < 2
+    return ['', '']
+  endif
+  return [l:lines[0], l:lines[1]]
+endfunction
+
+function! semantic_ctags_diff#_cache_key(repo, base_sha, head_sha, fingerprint) abort
+  return sha256(a:repo . "\0" . a:base_sha . "\0" . a:head_sha . "\0" . a:fingerprint)
+endfunction
+
+function! semantic_ctags_diff#_cache_path(key, format) abort
+  return semantic_ctags_diff#_cache_dir() . '/' . a:key . '.' . a:format
+endfunction
+
+function! semantic_ctags_diff#_cache_read(key, format) abort
+  let l:path = semantic_ctags_diff#_cache_path(a:key, a:format)
+  if filereadable(l:path)
+    return readfile(l:path)
+  endif
+  return []
+endfunction
+
+function! semantic_ctags_diff#_cache_write(key, format, lines) abort
+  if empty(a:lines)
+    return
+  endif
+  call writefile(a:lines, semantic_ctags_diff#_cache_path(a:key, a:format))
+endfunction
+
+function! semantic_ctags_diff#clear_cache() abort
+  let l:dir = get(g:, 'semantic_ctags_diff_cache_dir', '/tmp/semantic_ctags_diff')
+  if !isdirectory(l:dir)
+    echo 'semantic_ctags_diff: cache directory does not exist: ' . l:dir
+    return
+  endif
+  let l:removed = 0
+  for l:path in glob(l:dir . '/*', 0, 1)
+    if filereadable(l:path)
+      call delete(l:path)
+      let l:removed += 1
+    endif
+  endfor
+  echo 'semantic_ctags_diff: cleared ' . l:removed . ' cached file(s) from ' . l:dir
+endfunction
+
+function! semantic_ctags_diff#_run_shell(cmd) abort
+  let l:stdout_tmp = tempname()
+  let l:stderr_tmp = tempname()
+  let l:shell_cmd = a:cmd
+        \ . ' > ' . shellescape(l:stdout_tmp)
+        \ . ' 2> ' . shellescape(l:stderr_tmp)
+  call system(l:shell_cmd)
+  let l:exit = v:shell_error
+  let l:stdout = filereadable(l:stdout_tmp) ? readfile(l:stdout_tmp) : []
+  let l:stderr = filereadable(l:stderr_tmp) ? readfile(l:stderr_tmp) : []
+  if filereadable(l:stdout_tmp) | call delete(l:stdout_tmp) | endif
+  if filereadable(l:stderr_tmp) | call delete(l:stderr_tmp) | endif
+  return [l:stdout, l:stderr, l:exit]
+endfunction
+
 " --- Execution --------------------------------------------------------------
 
-function! semantic_ctags_diff#run(base, head, format) abort
+function! semantic_ctags_diff#run(base, head, format, ...) abort
   try
     let l:repo = semantic_ctags_diff#repo_root()
     let l:py_root = semantic_ctags_diff#python_project_root()
@@ -245,32 +332,54 @@ function! semantic_ctags_diff#run(base, head, format) abort
   let s:last_repo = l:repo
   let s:last_command = l:cmd
 
-  call semantic_ctags_diff#debug('--- run ' . a:format . ' ---')
+  let l:force = get(a:000, 0, 0)
+  let l:use_cache = get(g:, 'semantic_ctags_diff_cache', 1) && !l:force
+  let l:cache_key = ''
+  if l:use_cache
+    let l:refs = semantic_ctags_diff#_resolve_refs(l:repo, a:base, a:head)
+    if !empty(l:refs[0]) && !empty(l:refs[1])
+      let l:cache_key = semantic_ctags_diff#_cache_key(
+            \ l:repo, l:refs[0], l:refs[1],
+            \ semantic_ctags_diff#_cache_fingerprint(l:py_root))
+    else
+      call semantic_ctags_diff#_dbg('cache: could not resolve refs, skipping cache')
+    endif
+  endif
+
+  call semantic_ctags_diff#debug('--- run ' . a:format . (l:force ? ' (force)' : '') . ' ---')
   call semantic_ctags_diff#debug('repo_root: ' . l:repo)
   call semantic_ctags_diff#debug('python_root: ' . l:py_root)
   call semantic_ctags_diff#debug('command: ' . l:cmd)
-
-  let l:stdout_tmp = tempname()
-  let l:stderr_tmp = tempname()
-  let l:shell_cmd = l:cmd
-        \ . ' > ' . shellescape(l:stdout_tmp)
-        \ . ' 2> ' . shellescape(l:stderr_tmp)
-
-  call system(l:shell_cmd)
-  let l:exit_code = v:shell_error
-  let l:stdout_lines = filereadable(l:stdout_tmp) ? readfile(l:stdout_tmp) : []
-  let l:stderr_lines = filereadable(l:stderr_tmp) ? readfile(l:stderr_tmp) : []
-
-  if filereadable(l:stdout_tmp)
-    call delete(l:stdout_tmp)
+  if !empty(l:cache_key)
+    call semantic_ctags_diff#_dbg('cache key: ' . l:cache_key)
   endif
-  if filereadable(l:stderr_tmp)
-    call delete(l:stderr_tmp)
+
+  let l:stdout_lines = []
+  let l:stderr_lines = []
+  let l:exit_code = 0
+  let l:from_cache = 0
+
+  if !empty(l:cache_key)
+    let l:stdout_lines = semantic_ctags_diff#_cache_read(l:cache_key, a:format)
+    if !empty(l:stdout_lines)
+      let l:from_cache = 1
+      call semantic_ctags_diff#_dbg('cache hit: ' . a:format)
+    endif
+  endif
+
+  if !l:from_cache
+    let l:result = semantic_ctags_diff#_run_shell(l:cmd)
+    let l:stdout_lines = l:result[0]
+    let l:stderr_lines = l:result[1]
+    let l:exit_code = l:result[2]
   endif
 
   call semantic_ctags_diff#debug('exit_code: ' . l:exit_code)
   call semantic_ctags_diff#debug('stdout lines: ' . len(l:stdout_lines))
   call semantic_ctags_diff#debug('stderr lines: ' . len(l:stderr_lines))
+  if l:from_cache
+    call semantic_ctags_diff#debug('source: cache')
+  endif
 
   let l:preview_n = 5
   if !empty(l:stdout_lines)
@@ -286,7 +395,7 @@ function! semantic_ctags_diff#run(base, head, format) abort
     endfor
   endif
 
-  let l:failed = l:exit_code != 0 || (empty(l:stdout_lines) && !empty(l:stderr_lines))
+  let l:failed = !l:from_cache && (l:exit_code != 0 || (empty(l:stdout_lines) && !empty(l:stderr_lines)))
   if l:failed
     let l:error_lines = ['Semantic Ctags Diff — Error', '']
     call extend(l:error_lines, l:stderr_lines)
@@ -300,6 +409,11 @@ function! semantic_ctags_diff#run(base, head, format) abort
     return
   endif
 
+  if !l:from_cache && !empty(l:cache_key)
+    call semantic_ctags_diff#_cache_write(l:cache_key, a:format, l:stdout_lines)
+    call semantic_ctags_diff#_dbg('cache write: ' . a:format)
+  endif
+
   if a:format ==# 'json'
     call semantic_ctags_diff#_store_json(l:stdout_lines)
     let l:title = 'SemanticCtagsDiff JSON'
@@ -308,9 +422,13 @@ function! semantic_ctags_diff#run(base, head, format) abort
   else
     let l:title = 'SemanticCtagsDiff'
     let l:ft = 'markdown'
-    let l:header = semantic_ctags_diff#_markdown_header(l:repo, a:base, a:head, l:cmd)
+    let l:header = semantic_ctags_diff#_markdown_header(l:repo, a:base, a:head, l:cmd, l:from_cache)
     let l:body = l:header + l:stdout_lines
-    call semantic_ctags_diff#_fetch_json_for_cache(a:base, a:head)
+    call semantic_ctags_diff#_fetch_json_for_cache(a:base, a:head, l:cache_key, l:force)
+  endif
+
+  if l:from_cache
+    echo 'semantic_ctags_diff: using cached result'
   endif
 
   call semantic_ctags_diff#open_scratch(l:title, l:body, l:ft)

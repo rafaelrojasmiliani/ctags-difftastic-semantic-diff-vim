@@ -20,6 +20,8 @@ let g:semantic_ctags_diff_open_cmd = get(g:, 'semantic_ctags_diff_open_cmd', 'bo
 let g:semantic_ctags_diff_debug = get(g:, 'semantic_ctags_diff_debug', 0)
 let g:semantic_ctags_diff_use_fugitive_worktree = get(g:, 'semantic_ctags_diff_use_fugitive_worktree', 1)
 let g:semantic_ctags_diff_extra_args = get(g:, 'semantic_ctags_diff_extra_args', [])
+let g:semantic_ctags_diff_cache = get(g:, 'semantic_ctags_diff_cache', 1)
+let g:semantic_ctags_diff_cache_dir = get(g:, 'semantic_ctags_diff_cache_dir', '/tmp/semantic_ctags_diff')
 
 command! -nargs=* -complete=customlist,semantic_ctags_diff#complete_ref SemanticCtagsDiff
       \ call semantic_ctags_diff#cmd_diff(<q-args>)
@@ -37,6 +39,8 @@ command! -nargs=0 SemanticCtagsDiffCopyCommand
       \ call semantic_ctags_diff#copy_command()
 command! -nargs=0 SemanticCtagsDiffDebugLog
       \ call semantic_ctags_diff#debug_log()
+command! -nargs=0 SemanticCtagsDiffClearCache
+      \ call semantic_ctags_diff#clear_cache()
 command! -nargs=0 SemanticCtagsDiffClearDebugLog
       \ call semantic_ctags_diff#clear_debug_log()
 
