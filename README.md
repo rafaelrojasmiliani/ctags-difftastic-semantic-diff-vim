@@ -1,5 +1,7 @@
 # vim-semantic-ctags-diff
 
+[![CI](https://github.com/rafaelrojasmiliani/ctags-difftastic-semantic-diff-vim/actions/workflows/ci.yml/badge.svg)](https://github.com/rafaelrojasmiliani/ctags-difftastic-semantic-diff-vim/actions/workflows/ci.yml)
+
 Vim 8 plugin with two complementary features:
 
 1. **Semantic branch diffs** — calls the
