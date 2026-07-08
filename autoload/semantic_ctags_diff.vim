@@ -354,13 +354,11 @@ function! semantic_ctags_diff#run(base, head, format, ...) abort
 
   let l:force = get(a:000, 0, 0)
   let l:use_cache = get(g:, 'semantic_ctags_diff_cache', 1) && !l:force
-  let l:cache_key = ''
+  let l:cache = {}
   if l:use_cache
     let l:refs = semantic_ctags_diff#_resolve_refs(l:repo, a:base, a:head)
     if !empty(l:refs[0]) && !empty(l:refs[1])
-      let l:cache_key = semantic_ctags_diff#_cache_key(
-            \ l:repo, l:refs[0], l:refs[1],
-            \ semantic_ctags_diff#_cache_fingerprint(l:py_root))
+      let l:cache = semantic_ctags_diff#_cache_id(l:repo, l:refs[0], l:refs[1])
     else
       call semantic_ctags_diff#_dbg('cache: could not resolve refs, skipping cache')
     endif
@@ -370,8 +368,8 @@ function! semantic_ctags_diff#run(base, head, format, ...) abort
   call semantic_ctags_diff#debug('repo_root: ' . l:repo)
   call semantic_ctags_diff#debug('python_root: ' . l:py_root)
   call semantic_ctags_diff#debug('command: ' . l:cmd)
-  if !empty(l:cache_key)
-    call semantic_ctags_diff#_dbg('cache key: ' . l:cache_key)
+  if !empty(l:cache)
+    call semantic_ctags_diff#_dbg('cache file: ' . semantic_ctags_diff#_cache_path(l:cache, a:format))
   endif
 
   let l:stdout_lines = []
@@ -379,8 +377,8 @@ function! semantic_ctags_diff#run(base, head, format, ...) abort
   let l:exit_code = 0
   let l:from_cache = 0
 
-  if !empty(l:cache_key)
-    let l:stdout_lines = semantic_ctags_diff#_cache_read(l:cache_key, a:format)
+  if !empty(l:cache)
+    let l:stdout_lines = semantic_ctags_diff#_cache_read(l:cache, a:format)
     if !empty(l:stdout_lines)
       let l:from_cache = 1
       call semantic_ctags_diff#_dbg('cache hit: ' . a:format)
@@ -429,8 +427,8 @@ function! semantic_ctags_diff#run(base, head, format, ...) abort
     return
   endif
 
-  if !l:from_cache && !empty(l:cache_key)
-    call semantic_ctags_diff#_cache_write(l:cache_key, a:format, l:stdout_lines)
+  if !l:from_cache && !empty(l:cache)
+    call semantic_ctags_diff#_cache_write(l:cache, a:format, l:stdout_lines)
     call semantic_ctags_diff#_dbg('cache write: ' . a:format)
   endif
 
@@ -442,9 +440,9 @@ function! semantic_ctags_diff#run(base, head, format, ...) abort
   else
     let l:title = 'SemanticCtagsDiff'
     let l:ft = 'markdown'
-    let l:header = semantic_ctags_diff#_markdown_header(l:repo, a:base, a:head, l:cmd, l:from_cache)
+    let l:header = semantic_ctags_diff#_markdown_header(l:repo, a:base, a:head, l:cmd, l:from_cache, l:cache)
     let l:body = l:header + l:stdout_lines
-    call semantic_ctags_diff#_fetch_json_for_cache(a:base, a:head, l:cache_key, l:force)
+    call semantic_ctags_diff#_fetch_json_for_cache(a:base, a:head, l:cache, l:force)
   endif
 
   if l:from_cache
@@ -488,6 +486,7 @@ endfunction
 
 function! semantic_ctags_diff#_markdown_header(repo, base, head, cmd, ...) abort
   let l:from_cache = get(a:000, 0, 0)
+  let l:cache = get(a:000, 1, {})
   let l:lines = [
         \ 'Semantic Ctags Diff',
         \ '===================',
@@ -497,38 +496,35 @@ function! semantic_ctags_diff#_markdown_header(repo, base, head, cmd, ...) abort
         \ 'Head: ' . a:head,
         \ 'Command: ' . a:cmd,
         \ ]
-  if l:from_cache
-    call add(l:lines, 'Source: cached (' . semantic_ctags_diff#_cache_dir() . ')')
+  if l:from_cache && !empty(l:cache)
+    call add(l:lines, 'Source: cached (' . semantic_ctags_diff#_cache_path(l:cache, 'markdown') . ')')
   endif
   call add(l:lines, '')
   return l:lines
 endfunction
 
-function! semantic_ctags_diff#_json_cache_key_for(base, head) abort
+function! semantic_ctags_diff#_json_cache_id_for(base, head) abort
   if !get(g:, 'semantic_ctags_diff_cache', 1)
-    return ''
+    return {}
   endif
   try
     let l:repo = !empty(s:last_repo) ? s:last_repo : semantic_ctags_diff#repo_root()
-    let l:py_root = semantic_ctags_diff#python_project_root()
     let l:refs = semantic_ctags_diff#_resolve_refs(l:repo, a:base, a:head)
     if empty(l:refs[0]) || empty(l:refs[1])
-      return ''
+      return {}
     endif
-    return semantic_ctags_diff#_cache_key(
-          \ l:repo, l:refs[0], l:refs[1],
-          \ semantic_ctags_diff#_cache_fingerprint(l:py_root))
+    return semantic_ctags_diff#_cache_id(l:repo, l:refs[0], l:refs[1])
   catch /.*/
-    return ''
+    return {}
   endtry
 endfunction
 
-function! semantic_ctags_diff#_fetch_json_for_cache(base, head, cache_key, force) abort
+function! semantic_ctags_diff#_fetch_json_for_cache(base, head, cache, force) abort
   " Silently fetch JSON for FlogSymbol picker / added-symbol navigation.
   try
-    let l:use_cache = get(g:, 'semantic_ctags_diff_cache', 1) && !a:force && !empty(a:cache_key)
+    let l:use_cache = get(g:, 'semantic_ctags_diff_cache', 1) && !a:force && !empty(a:cache)
     if l:use_cache
-      let l:cached = semantic_ctags_diff#_cache_read(a:cache_key, 'json')
+      let l:cached = semantic_ctags_diff#_cache_read(a:cache, 'json')
       if !empty(l:cached)
         call semantic_ctags_diff#_store_json(l:cached)
         call semantic_ctags_diff#_dbg('cache hit: json (navigation)')
@@ -541,7 +537,7 @@ function! semantic_ctags_diff#_fetch_json_for_cache(base, head, cache_key, force
     if l:result[2] == 0 && !empty(l:result[0])
       call semantic_ctags_diff#_store_json(l:result[0])
       if l:use_cache
-        call semantic_ctags_diff#_cache_write(a:cache_key, 'json', l:result[0])
+        call semantic_ctags_diff#_cache_write(a:cache, 'json', l:result[0])
         call semantic_ctags_diff#_dbg('cache write: json')
       endif
     endif
@@ -671,8 +667,8 @@ function! semantic_ctags_diff#flog_symbol() abort
 
   if empty(s:last_json)
     if !empty(s:last_base) && !empty(s:last_head)
-      let l:key = semantic_ctags_diff#_json_cache_key_for(s:last_base, s:last_head)
-      call semantic_ctags_diff#_fetch_json_for_cache(s:last_base, s:last_head, l:key, 0)
+      let l:cache = semantic_ctags_diff#_json_cache_id_for(s:last_base, s:last_head)
+      call semantic_ctags_diff#_fetch_json_for_cache(s:last_base, s:last_head, l:cache, 0)
     endif
   endif
 

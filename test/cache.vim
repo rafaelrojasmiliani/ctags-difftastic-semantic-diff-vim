@@ -9,15 +9,16 @@ runtime autoload/semantic_ctags_diff.vim
 
 let g:semantic_ctags_diff_cache_dir = '/tmp/semantic_ctags_diff_test_' . getpid()
 
-let s:fp = semantic_ctags_diff#_cache_fingerprint('/tmp/py')
-let s:key = semantic_ctags_diff#_cache_key('/tmp/repo', 'aaa', 'bbb', s:fp)
-call assert_equal(s:key, semantic_ctags_diff#_cache_key('/tmp/repo', 'aaa', 'bbb', s:fp))
-call assert_notequal(s:key, semantic_ctags_diff#_cache_key('/tmp/repo', 'aaa', 'ccc', s:fp))
+let s:cache = semantic_ctags_diff#_cache_id('/tmp/myrepo', 'aaa111', 'bbb222')
+call assert_equal('aaa111..bbb222', semantic_ctags_diff#_cache_stem(s:cache))
+call assert_equal(
+      \ g:semantic_ctags_diff_cache_dir . '/myrepo/aaa111..bbb222.markdown',
+      \ semantic_ctags_diff#_cache_path(s:cache, 'markdown'))
 
 let s:lines = ['line one', 'line two']
-call semantic_ctags_diff#_cache_write(s:key, 'markdown', s:lines)
-call assert_equal(s:lines, semantic_ctags_diff#_cache_read(s:key, 'markdown'))
-call assert_equal([], semantic_ctags_diff#_cache_read(s:key, 'json'))
+call semantic_ctags_diff#_cache_write(s:cache, 'markdown', s:lines)
+call assert_equal(s:lines, semantic_ctags_diff#_cache_read(s:cache, 'markdown'))
+call assert_equal([], semantic_ctags_diff#_cache_read(s:cache, 'json'))
 
 call semantic_ctags_diff#clear_cache()
 

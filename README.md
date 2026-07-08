@@ -181,14 +181,20 @@ Python project auto-detection looks for:
 ## Result cache
 
 `:SemanticCtagsDiff` can be slow on large repos. Successful results are cached
-under `/tmp/semantic_ctags_diff/` (never in your workspace) as
-`<hash>.markdown` and `<hash>.json`. The cache key includes the repo path,
-resolved base/head SHAs, and your ctags/include/extra-args settings — so a new
-commit on `HEAD` automatically misses the cache.
+under `/tmp/semantic_ctags_diff/<repo-name>/` (never in your workspace), named
+after the **resolved commits** being compared:
 
-- Repeat runs with the same refs are instant (`using cached result` is echoed).
+```
+/tmp/semantic_ctags_diff/my-project/a1b2c3d4..e5f6g7h8.markdown
+/tmp/semantic_ctags_diff/my-project/a1b2c3d4..e5f6g7h8.json
+```
+
+When `main` or `HEAD` moves to a new commit, the filename changes and the diff
+is recomputed automatically. Same commit pair → instant reload.
+
+- Repeat runs echo `using cached result`.
 - `:SemanticCtagsDiffRefresh` always bypasses the cache and re-runs Python.
-- `:SemanticCtagsDiffClearCache` deletes all files in the cache directory.
+- `:SemanticCtagsDiffClearCache` deletes all cached files.
 - Disable with `let g:semantic_ctags_diff_cache = 0`.
 
 ## Commands

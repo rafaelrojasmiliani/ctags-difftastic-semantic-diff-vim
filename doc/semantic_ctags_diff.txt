@@ -227,8 +227,9 @@ g:semantic_ctags_diff_cache                       *g:semantic_ctags_diff_cache*
       Cache successful diff results under /tmp. Default: 1
 
 g:semantic_ctags_diff_cache_dir                   *g:semantic_ctags_diff_cache_dir*
-      Directory for cached .markdown and .json files. Default:
-      '/tmp/semantic_ctags_diff'. Nothing is written into the Git work tree.
+      Directory for cached results. Default: '/tmp/semantic_ctags_diff'.
+      Files are stored as <repo-name>/<base_sha>..<head_sha>.{markdown,json}
+      and only rebuild when those commits change.
 
 g:semantic_ctags_diff_flog_open                   *g:semantic_ctags_diff_flog_open*
       Flog command used by :SemanticCtagsDiffFlogSymbol. 'Flog' opens a new
