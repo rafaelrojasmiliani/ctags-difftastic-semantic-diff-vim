@@ -235,18 +235,6 @@ function! semantic_ctags_diff#_cache_dir() abort
   return l:dir
 endfunction
 
-function! semantic_ctags_diff#_cache_fingerprint(py_root) abort
-  let l:parts = [
-        \ g:semantic_ctags_diff_ctags,
-        \ g:semantic_ctags_diff_include,
-        \ join(g:semantic_ctags_diff_extra_args, "\n"),
-        \ a:py_root,
-        \ semantic_ctags_diff#_python_executable(a:py_root),
-        \ g:semantic_ctags_diff_cli,
-        \ ]
-  return sha256(join(l:parts, "\0"))
-endfunction
-
 function! semantic_ctags_diff#_resolve_refs(repo, base, head) abort
   let l:cmd = 'git -C ' . shellescape(a:repo)
         \ . ' rev-parse ' . shellescape(a:base) . ' ' . shellescape(a:head)
@@ -258,27 +246,51 @@ function! semantic_ctags_diff#_resolve_refs(repo, base, head) abort
   return [l:lines[0], l:lines[1]]
 endfunction
 
-function! semantic_ctags_diff#_cache_key(repo, base_sha, head_sha, fingerprint) abort
-  return sha256(a:repo . "\0" . a:base_sha . "\0" . a:head_sha . "\0" . a:fingerprint)
+function! semantic_ctags_diff#_sanitize_cache_name(name) abort
+  let l:name = substitute(a:name, '[\/]\+$', '', 'g')
+  return substitute(l:name, '[^A-Za-z0-9._-]', '_', 'g')
 endfunction
 
-function! semantic_ctags_diff#_cache_path(key, format) abort
-  return semantic_ctags_diff#_cache_dir() . '/' . a:key . '.' . a:format
+" Per-repo cache folder under /tmp; files named <base_sha>..<head_sha>.<format>.
+function! semantic_ctags_diff#_repo_cache_dir(repo) abort
+  let l:name = semantic_ctags_diff#_sanitize_cache_name(fnamemodify(a:repo, ':t'))
+  if empty(l:name)
+    let l:name = 'repo'
+  endif
+  let l:dir = semantic_ctags_diff#_cache_dir() . '/' . l:name
+  if !isdirectory(l:dir)
+    call mkdir(l:dir, 'p', 0700)
+  endif
+  return l:dir
 endfunction
 
-function! semantic_ctags_diff#_cache_read(key, format) abort
-  let l:path = semantic_ctags_diff#_cache_path(a:key, a:format)
+" cache: {'repo': ..., 'base': <sha>, 'head': <sha>}
+function! semantic_ctags_diff#_cache_id(repo, base_sha, head_sha) abort
+  return {'repo': a:repo, 'base': a:base_sha, 'head': a:head_sha}
+endfunction
+
+function! semantic_ctags_diff#_cache_stem(cache) abort
+  return a:cache.base . '..' . a:cache.head
+endfunction
+
+function! semantic_ctags_diff#_cache_path(cache, format) abort
+  return semantic_ctags_diff#_repo_cache_dir(a:cache.repo) . '/'
+        \ . semantic_ctags_diff#_cache_stem(a:cache) . '.' . a:format
+endfunction
+
+function! semantic_ctags_diff#_cache_read(cache, format) abort
+  let l:path = semantic_ctags_diff#_cache_path(a:cache, a:format)
   if filereadable(l:path)
     return readfile(l:path)
   endif
   return []
 endfunction
 
-function! semantic_ctags_diff#_cache_write(key, format, lines) abort
+function! semantic_ctags_diff#_cache_write(cache, format, lines) abort
   if empty(a:lines)
     return
   endif
-  call writefile(a:lines, semantic_ctags_diff#_cache_path(a:key, a:format))
+  call writefile(a:lines, semantic_ctags_diff#_cache_path(a:cache, a:format))
 endfunction
 
 function! semantic_ctags_diff#clear_cache() abort
@@ -289,7 +301,15 @@ function! semantic_ctags_diff#clear_cache() abort
   endif
   let l:removed = 0
   for l:path in glob(l:dir . '/*', 0, 1)
-    if filereadable(l:path)
+    if isdirectory(l:path)
+      for l:file in glob(l:path . '/*', 0, 1)
+        if filereadable(l:file)
+          call delete(l:file)
+          let l:removed += 1
+        endif
+      endfor
+      call delete(l:path, 'd')
+    elseif filereadable(l:path)
       call delete(l:path)
       let l:removed += 1
     endif
@@ -460,14 +480,15 @@ function! semantic_ctags_diff#refresh() abort
     return
   endif
   let l:replace = bufnr('%') == s:last_scratch_bufnr
-  call semantic_ctags_diff#run(s:last_base, s:last_head, s:last_format)
+  call semantic_ctags_diff#run(s:last_base, s:last_head, s:last_format, 1)
   if l:replace && s:last_scratch_bufnr != -1 && bufnr('%') != s:last_scratch_bufnr
     " run() opened a new buffer; close duplicate if needed
   endif
 endfunction
 
-function! semantic_ctags_diff#_markdown_header(repo, base, head, cmd) abort
-  return [
+function! semantic_ctags_diff#_markdown_header(repo, base, head, cmd, ...) abort
+  let l:from_cache = get(a:000, 0, 0)
+  let l:lines = [
         \ 'Semantic Ctags Diff',
         \ '===================',
         \ '',
@@ -475,26 +496,54 @@ function! semantic_ctags_diff#_markdown_header(repo, base, head, cmd) abort
         \ 'Base: ' . a:base,
         \ 'Head: ' . a:head,
         \ 'Command: ' . a:cmd,
-        \ '',
         \ ]
+  if l:from_cache
+    call add(l:lines, 'Source: cached (' . semantic_ctags_diff#_cache_dir() . ')')
+  endif
+  call add(l:lines, '')
+  return l:lines
 endfunction
 
-function! semantic_ctags_diff#_fetch_json_for_cache(base, head) abort
-  " Silently fetch JSON for FlogSymbol picker without opening a buffer.
+function! semantic_ctags_diff#_json_cache_key_for(base, head) abort
+  if !get(g:, 'semantic_ctags_diff_cache', 1)
+    return ''
+  endif
   try
-    let l:cmd = semantic_ctags_diff#build_command(a:base, a:head, 'json')
-    let l:stdout_tmp = tempname()
-    let l:stderr_tmp = tempname()
-    let l:shell_cmd = l:cmd
-          \ . ' > ' . shellescape(l:stdout_tmp)
-          \ . ' 2> ' . shellescape(l:stderr_tmp)
-    call system(l:shell_cmd)
-    if filereadable(l:stdout_tmp)
-      call semantic_ctags_diff#_store_json(readfile(l:stdout_tmp))
-      call delete(l:stdout_tmp)
+    let l:repo = !empty(s:last_repo) ? s:last_repo : semantic_ctags_diff#repo_root()
+    let l:py_root = semantic_ctags_diff#python_project_root()
+    let l:refs = semantic_ctags_diff#_resolve_refs(l:repo, a:base, a:head)
+    if empty(l:refs[0]) || empty(l:refs[1])
+      return ''
     endif
-    if filereadable(l:stderr_tmp)
-      call delete(l:stderr_tmp)
+    return semantic_ctags_diff#_cache_key(
+          \ l:repo, l:refs[0], l:refs[1],
+          \ semantic_ctags_diff#_cache_fingerprint(l:py_root))
+  catch /.*/
+    return ''
+  endtry
+endfunction
+
+function! semantic_ctags_diff#_fetch_json_for_cache(base, head, cache_key, force) abort
+  " Silently fetch JSON for FlogSymbol picker / added-symbol navigation.
+  try
+    let l:use_cache = get(g:, 'semantic_ctags_diff_cache', 1) && !a:force && !empty(a:cache_key)
+    if l:use_cache
+      let l:cached = semantic_ctags_diff#_cache_read(a:cache_key, 'json')
+      if !empty(l:cached)
+        call semantic_ctags_diff#_store_json(l:cached)
+        call semantic_ctags_diff#_dbg('cache hit: json (navigation)')
+        return
+      endif
+    endif
+
+    let l:cmd = semantic_ctags_diff#build_command(a:base, a:head, 'json')
+    let l:result = semantic_ctags_diff#_run_shell(l:cmd)
+    if l:result[2] == 0 && !empty(l:result[0])
+      call semantic_ctags_diff#_store_json(l:result[0])
+      if l:use_cache
+        call semantic_ctags_diff#_cache_write(a:cache_key, 'json', l:result[0])
+        call semantic_ctags_diff#_dbg('cache write: json')
+      endif
     endif
   catch /.*/
     " Cache fetch is best-effort.
@@ -622,7 +671,8 @@ function! semantic_ctags_diff#flog_symbol() abort
 
   if empty(s:last_json)
     if !empty(s:last_base) && !empty(s:last_head)
-      call semantic_ctags_diff#_fetch_json_for_cache(s:last_base, s:last_head)
+      let l:key = semantic_ctags_diff#_json_cache_key_for(s:last_base, s:last_head)
+      call semantic_ctags_diff#_fetch_json_for_cache(s:last_base, s:last_head, l:key, 0)
     endif
   endif
 

@@ -111,8 +111,11 @@ COMMANDS                                        *semantic-ctags-diff-commands*
         :SemanticCtagsDiff origin/main HEAD
 
 :SemanticCtagsDiffRefresh                         *:SemanticCtagsDiffRefresh*
-      Re-run the last semantic diff and replace the scratch buffer when
-      invoked from the previous result buffer.
+      Re-run the last semantic diff (bypasses the /tmp cache) and replace the
+      scratch buffer when invoked from the previous result buffer.
+
+:SemanticCtagsDiffClearCache                       *:SemanticCtagsDiffClearCache*
+      Delete all cached result files from g:semantic_ctags_diff_cache_dir.
 
 :SemanticCtagsDiffCopyCommand                     *:SemanticCtagsDiffCopyCommand*
       Echo and copy the last external shell command to the clipboard register.
@@ -219,6 +222,13 @@ g:semantic_ctags_diff_use_fugitive_worktree       *g:semantic_ctags_diff_use_fug
 
 g:semantic_ctags_diff_extra_args                  *g:semantic_ctags_diff_extra_args*
       List of extra CLI arguments appended to the command.
+
+g:semantic_ctags_diff_cache                       *g:semantic_ctags_diff_cache*
+      Cache successful diff results under /tmp. Default: 1
+
+g:semantic_ctags_diff_cache_dir                   *g:semantic_ctags_diff_cache_dir*
+      Directory for cached .markdown and .json files. Default:
+      '/tmp/semantic_ctags_diff'. Nothing is written into the Git work tree.
 
 g:semantic_ctags_diff_flog_open                   *g:semantic_ctags_diff_flog_open*
       Flog command used by :SemanticCtagsDiffFlogSymbol. 'Flog' opens a new

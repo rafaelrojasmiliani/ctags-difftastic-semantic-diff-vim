@@ -155,6 +155,8 @@ let g:semantic_ctags_diff_ctags = 'ctags'
 let g:semantic_ctags_diff_use_fugitive_worktree = 1
 let g:semantic_ctags_diff_debug = 0
 let g:semantic_ctags_diff_open_cmd = 'botright new'
+let g:semantic_ctags_diff_cache = 1
+let g:semantic_ctags_diff_cache_dir = '/tmp/semantic_ctags_diff'
 
 " Optional: explicit Python source tree (default: auto-detect submodules/semantic-ctags-diff)
 " let g:semantic_ctags_diff_root = '/path/to/semantic-ctags-diff'
@@ -176,6 +178,19 @@ Python project auto-detection looks for:
 - `submodules/semantic-ctags-diff/pyproject.toml`
 - `submodules/sematic-ctags-diff/pyproject.toml` (typo fallback)
 
+## Result cache
+
+`:SemanticCtagsDiff` can be slow on large repos. Successful results are cached
+under `/tmp/semantic_ctags_diff/` (never in your workspace) as
+`<hash>.markdown` and `<hash>.json`. The cache key includes the repo path,
+resolved base/head SHAs, and your ctags/include/extra-args settings — so a new
+commit on `HEAD` automatically misses the cache.
+
+- Repeat runs with the same refs are instant (`using cached result` is echoed).
+- `:SemanticCtagsDiffRefresh` always bypasses the cache and re-runs Python.
+- `:SemanticCtagsDiffClearCache` deletes all files in the cache directory.
+- Disable with `let g:semantic_ctags_diff_cache = 0`.
+
 ## Commands
 
 | Command | Description |
@@ -185,7 +200,8 @@ Python project auto-detection looks for:
 | `:SemanticCtagsDiffCurrent` | Use configured defaults |
 | `:SemanticCtagsDiffMain` | `main` vs `HEAD` |
 | `:SemanticCtagsDiffOriginMain` | `origin/main` vs `HEAD` |
-| `:SemanticCtagsDiffRefresh` | Re-run last query |
+| `:SemanticCtagsDiffRefresh` | Re-run last query (bypasses cache) |
+| `:SemanticCtagsDiffClearCache` | Delete cached results from `/tmp` |
 | `:SemanticCtagsDiffCopyCommand` | Copy shell command to `+` register |
 | `:SemanticCtagsDiffDebugLog` | Open debug log |
 | `:SemanticCtagsDiffClearDebugLog` | Clear debug log |
