@@ -16,9 +16,19 @@ endif
 " 'Flogsplit' opens a split instead.
 let g:semantic_ctags_diff_flog_open =
       \ get(g:, 'semantic_ctags_diff_flog_open', 'Flog')
+let g:semantic_ctags_diff_flog_file_maps =
+      \ get(g:, 'semantic_ctags_diff_flog_file_maps', 1)
 
 function! s:flog_symbol(open_cmd, kind_filter) abort
   call semantic_ctags_diff#flog_current_symbol(a:open_cmd, a:kind_filter)
+endfunction
+
+function! s:flog_file(open_cmd) abort
+  call semantic_ctags_diff#flog#open_current_file(a:open_cmd)
+endfunction
+
+function! s:flog_include(open_cmd) abort
+  call semantic_ctags_diff#flog#open_include(a:open_cmd)
 endfunction
 
 " Two families for the symbol under the cursor:
@@ -48,6 +58,22 @@ if exists(':FlogsplitNamespace') != 2
 endif
 if exists(':FlogNamespace') != 2
   command! -bar FlogNamespace call s:flog_symbol('Flog', 'namespace')
+endif
+
+" File history: log filtered to one path; <CR>/dd in the graph show that file only.
+if exists(':FlogFile') != 2
+  command! -bar FlogFile call s:flog_file('Flog')
+endif
+if exists(':FlogsplitFile') != 2
+  command! -bar FlogsplitFile call s:flog_file('Flogsplit')
+endif
+
+" #include under cursor -> Flog history of the resolved header (repo-relative).
+if exists(':FlogInclude') != 2
+  command! -bar FlogInclude call s:flog_include('Flog')
+endif
+if exists(':FlogsplitInclude') != 2
+  command! -bar FlogsplitInclude call s:flog_include('Flogsplit')
 endif
 
 " Optional Flog diff highlight groups (UI only — stays in Vim).

@@ -142,6 +142,15 @@ COMMANDS                                        *semantic-ctags-diff-commands*
 :FlogsplitSymbol / :FlogsplitFunction / ...        *:FlogsplitSymbol*
       (vim-flog only) Same, but in a split of the current window.
 
+:FlogFile / :FlogsplitFile                        *:FlogFile*
+      (vim-flog only) Git log for the current buffer's repo-relative path
+      (Flog -path=). Remaps <CR> and dd in the graph so side windows show
+      only that file's changes, not the whole commit.
+
+:FlogInclude / :FlogsplitInclude                  *:FlogInclude*
+      (vim-flog only) Resolve #include on the cursor line, then open file
+      history like :FlogFile for the header.
+
 :Gdifftastic [ref]                                *:Gdifftastic*
       Difftastic diff of the current file against [ref] (default HEAD), in a
       horizontal scratch split. See |semantic-ctags-diff-difftastic|.
@@ -234,6 +243,10 @@ g:semantic_ctags_diff_cache_dir                   *g:semantic_ctags_diff_cache_d
 g:semantic_ctags_diff_flog_open                   *g:semantic_ctags_diff_flog_open*
       Flog command used by :SemanticCtagsDiffFlogSymbol. 'Flog' opens a new
       tab (commit graph + diff), 'Flogsplit' opens a split. Default: 'Flog'
+
+g:semantic_ctags_diff_flog_file_maps              *g:semantic_ctags_diff_flog_file_maps*
+      When :FlogFile/:FlogInclude open a floggraph buffer, remap <CR> and dd to
+      path-scoped commit/diff views. Default: 1
 
 g:semantic_ctags_diff_difft                       *g:semantic_ctags_diff_difft*
       difftastic executable for :Gdifftastic. Default: 'difft'

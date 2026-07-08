@@ -217,6 +217,8 @@ is recomputed automatically. Same commit pair → instant reload.
 | `:SemanticCtagsDiffFlogSymbol` | Pick symbol → Flog history in a new tab (if flog installed) |
 | `:FlogSymbol` / `:FlogFunction` / `:FlogClass` / `:FlogNamespace` | Cursor symbol history in a **new tab** |
 | `:FlogsplitSymbol` / `:FlogsplitFunction` / ... | Cursor symbol history in a split |
+| `:FlogFile` / `:FlogsplitFile` | **Single-file** history (`-path=`); `<CR>`/`dd` show only that file |
+| `:FlogInclude` / `:FlogsplitInclude` | `#include` under cursor → history of the resolved header |
 | `:Gdifftastic [ref]` | Difftastic diff of current file vs `ref` (default `HEAD`), horizontal split |
 | `:Gvdifftastic [ref]` | Same, vertical split |
 
@@ -340,6 +342,26 @@ required:
 ```bash
 semantic-branch-diff --symbol-at --file path.cpp --line 42 --kind function
 ```
+
+### Single-file Flog (`:FlogFile`, `:FlogInclude`)
+
+Plain `:Flog -path=file.cpp` filters the **commit list** to that file, but the
+default flog keys still open the **whole commit** (`<CR>`) or diff all files
+(`dd`). These commands fix that:
+
+| Command | Opens |
+|---------|-------|
+| `:FlogFile` | File history in a **new tab**; `<CR>` and `dd` scoped to that file |
+| `:FlogsplitFile` | Same, in a split |
+| `:FlogInclude` | Resolve `#include` on cursor → header file history (new tab) |
+| `:FlogsplitInclude` | Same, in a split |
+
+Implementation: `Flog -path=<git-relative-path>` plus buffer-local remaps to
+vim-flog's path-scoped plugs (`FlogVSplitCommitPathsRight`, `FlogVDiffSplitPathsRight`).
+Disable remaps with `let g:semantic_ctags_diff_flog_file_maps = 0`.
+
+`#include` resolution searches: directory of the current file → repo root →
+`findfile()`. System includes (`#include <vector>`) only resolve inside the repo.
 
 ### Responsibility split (Python vs Vim)
 
