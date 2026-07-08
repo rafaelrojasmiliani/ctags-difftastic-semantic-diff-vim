@@ -361,7 +361,15 @@ vim-flog's path-scoped plugs (`FlogVSplitCommitPathsRight`, `FlogVDiffSplitPaths
 Disable remaps with `let g:semantic_ctags_diff_flog_file_maps = 0`.
 
 `#include` resolution searches: directory of the current file → repo root →
-`findfile()`. System includes (`#include <vector>`) only resolve inside the repo.
+common prefixes (`include/`, `src/`, …) → **`git ls-files`** (suffix match) →
+`findfile()`. This is **not ctags** — whole-file `Flog -path=`, not symbol
+line ranges. System SDK headers outside the repo cannot be opened.
+
+Optional extra search roots:
+
+```vim
+let g:semantic_ctags_diff_include_search_dirs = ['/path/to/extra/includes']
+```
 
 ### Responsibility split (Python vs Vim)
 
