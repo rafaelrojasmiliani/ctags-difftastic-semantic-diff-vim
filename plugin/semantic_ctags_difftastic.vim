@@ -15,10 +15,10 @@ let g:semantic_ctags_diff_difftastic_context =
 " :Gdifftastic [ref]   — horizontal split (default ref: HEAD)
 " :Gvdifftastic [ref]  — vertical split
 if !exists(':Gdifftastic')
-  command! -nargs=? -complete=customlist,semantic_ctags_diff#complete_ref Gdifftastic
+  command! -nargs=? -complete=customlist,semantic_ctags_diff#complete Gdifftastic
         \ call semantic_ctags_diff#difftastic#diff('botright new', <q-args>)
 endif
 if !exists(':Gvdifftastic')
-  command! -nargs=? -complete=customlist,semantic_ctags_diff#complete_ref Gvdifftastic
+  command! -nargs=? -complete=customlist,semantic_ctags_diff#complete Gvdifftastic
         \ call semantic_ctags_diff#difftastic#diff('botright vnew', <q-args>)
 endif

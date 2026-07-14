@@ -66,3 +66,4 @@ jobs:
           vim -N -u NONE -es -S test/nav_parse.vim
           vim -N -u NONE -es -S test/cache.vim
           vim -N -u NONE -es -S test/flog_include.vim
+          vim -N -u NONE -es -S test/complete.vim

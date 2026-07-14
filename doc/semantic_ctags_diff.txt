@@ -82,22 +82,38 @@ INSTALLATION                                    *semantic-ctags-diff-install*
 ==============================================================================
 COMMANDS                                        *semantic-ctags-diff-commands*
 
-:SemanticCtagsDiff [base] [head]                *:SemanticCtagsDiff*
+:SemanticCtagsDiff [base] [head] [file]          *:SemanticCtagsDiff*
       Run semantic branch diff and open Markdown in a scratch buffer.
       Defaults: base = g:semantic_ctags_diff_default_base (main),
                 head = g:semantic_ctags_diff_default_head (HEAD).
+      Optional third argument limits the diff to one repo-relative file path.
 
       Examples: >
         :SemanticCtagsDiff
         :SemanticCtagsDiff main
         :SemanticCtagsDiff main feature/foo
         :SemanticCtagsDiff origin/main HEAD
+        :SemanticCtagsDiff main HEAD src/foo.cpp
 
-:SemanticCtagsDiffJson [base] [head]            *:SemanticCtagsDiffJson*
+:SemanticCtagsDiffJson [base] [head] [file]      *:SemanticCtagsDiffJson*
       Same as above but opens pretty-printed JSON.
 
       Example: >
         :SemanticCtagsDiffJson origin/main HEAD
+        :SemanticCtagsDiffJson main HEAD include/bar.hpp
+
+:SemanticCtagsDiffFile [base] [head]            *:SemanticCtagsDiffFile*
+      Markdown diff for the current buffer's file (uses git-relative path).
+      Faster than a full-repo diff when you only care about one file.
+
+      Example: >
+        :SemanticCtagsDiffFile main HEAD
+
+:SemanticCtagsDiffFileJson [base] [head]        *:SemanticCtagsDiffFileJson*
+      JSON diff for the current buffer's file.
+
+      Example: >
+        :SemanticCtagsDiffFileJson origin/main HEAD
 
 :SemanticCtagsDiffCurrent                       *:SemanticCtagsDiffCurrent*
       Shortcut using configured default base and head.
@@ -125,6 +141,13 @@ COMMANDS                                        *semantic-ctags-diff-commands*
 
 :SemanticCtagsDiffClearDebugLog                   *:SemanticCtagsDiffClearDebugLog*
       Clear the in-memory debug log.
+
+TAB COMPLETION                                  *semantic-ctags-diff-completion*
+      :SemanticCtagsDiff and :SemanticCtagsDiffJson complete Git refs on the
+      first two arguments. With vim-fugitive, fugitive#CompleteObject is used.
+      The optional third argument (file path) completes tracked files via
+      fugitive#CompletePath or git ls-files, filtered by
+      g:semantic_ctags_diff_include.
 
 :SemanticCtagsDiffFlog [base] [head]              *:SemanticCtagsDiffFlog*
       (vim-flog only) Open Flog for base..head as a raw git log companion.

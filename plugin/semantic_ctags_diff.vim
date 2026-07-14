@@ -23,10 +23,14 @@ let g:semantic_ctags_diff_extra_args = get(g:, 'semantic_ctags_diff_extra_args',
 let g:semantic_ctags_diff_cache = get(g:, 'semantic_ctags_diff_cache', 1)
 let g:semantic_ctags_diff_cache_dir = get(g:, 'semantic_ctags_diff_cache_dir', '/tmp/semantic_ctags_diff')
 
-command! -nargs=* -complete=customlist,semantic_ctags_diff#complete_ref SemanticCtagsDiff
+command! -nargs=* -complete=customlist,semantic_ctags_diff#complete SemanticCtagsDiff
       \ call semantic_ctags_diff#cmd_diff(<q-args>)
-command! -nargs=* -complete=customlist,semantic_ctags_diff#complete_ref SemanticCtagsDiffJson
+command! -nargs=* -complete=customlist,semantic_ctags_diff#complete SemanticCtagsDiffJson
       \ call semantic_ctags_diff#cmd_diff_json(<q-args>)
+command! -nargs=* -complete=customlist,semantic_ctags_diff#complete SemanticCtagsDiffFile
+      \ call semantic_ctags_diff#cmd_diff_file(<q-args>)
+command! -nargs=* -complete=customlist,semantic_ctags_diff#complete SemanticCtagsDiffFileJson
+      \ call semantic_ctags_diff#cmd_diff_file_json(<q-args>)
 command! -nargs=0 SemanticCtagsDiffCurrent
       \ call semantic_ctags_diff#run_current()
 command! -nargs=0 SemanticCtagsDiffMain
@@ -45,7 +49,7 @@ command! -nargs=0 SemanticCtagsDiffClearDebugLog
       \ call semantic_ctags_diff#clear_debug_log()
 
 if exists(':Flog') == 2
-  command! -nargs=* -complete=customlist,semantic_ctags_diff#complete_ref SemanticCtagsDiffFlog
+  command! -nargs=* -complete=customlist,semantic_ctags_diff#complete SemanticCtagsDiffFlog
         \ call semantic_ctags_diff#cmd_flog(<q-args>)
   command! -nargs=0 SemanticCtagsDiffFlogSymbol
         \ call semantic_ctags_diff#flog_symbol()

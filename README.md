@@ -203,8 +203,10 @@ is recomputed automatically. Same commit pair → instant reload.
 
 | Command | Description |
 |---------|-------------|
-| `:SemanticCtagsDiff [base] [head]` | Markdown scratch buffer |
-| `:SemanticCtagsDiffJson [base] [head]` | JSON scratch buffer |
+| `:SemanticCtagsDiff [base] [head] [file]` | Markdown scratch buffer (optional file scope) |
+| `:SemanticCtagsDiffJson [base] [head] [file]` | JSON scratch buffer (optional file scope) |
+| `:SemanticCtagsDiffFile [base] [head]` | Markdown diff for **current buffer** file |
+| `:SemanticCtagsDiffFileJson [base] [head]` | JSON diff for **current buffer** file |
 | `:SemanticCtagsDiffCurrent` | Use configured defaults |
 | `:SemanticCtagsDiffMain` | `main` vs `HEAD` |
 | `:SemanticCtagsDiffOriginMain` | `origin/main` vs `HEAD` |
@@ -221,6 +223,18 @@ is recomputed automatically. Same commit pair → instant reload.
 | `:FlogInclude` / `:FlogsplitInclude` | `#include` under cursor → history of the resolved header |
 | `:Gdifftastic [ref]` | Difftastic diff of current file vs `ref` (default `HEAD`), horizontal split |
 | `:Gvdifftastic [ref]` | Same, vertical split |
+
+### Tab completion
+
+`:SemanticCtagsDiff`, `:SemanticCtagsDiffJson`, and related commands complete
+**branches and refs** on the first two arguments (`<Tab>` after base or head).
+When vim-fugitive is installed, completion uses `fugitive#CompleteObject`.
+
+On the **third argument** of `:SemanticCtagsDiff` / `:SemanticCtagsDiffJson`,
+completion offers tracked repo files (filtered by `g:semantic_ctags_diff_include`),
+using `fugitive#CompletePath` when available.
+
+`:SemanticCtagsDiffFile` uses the current buffer path — no file argument needed.
 
 ### Suggested mappings (not installed by default)
 
