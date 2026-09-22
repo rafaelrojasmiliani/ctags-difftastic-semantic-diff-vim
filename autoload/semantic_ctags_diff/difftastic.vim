@@ -12,8 +12,109 @@ function! semantic_ctags_diff#difftastic#available() abort
   return executable(get(g:, 'semantic_ctags_diff_difft', 'difft'))
 endfunction
 
+function! s:color_enabled() abort
+  return get(g:, 'semantic_ctags_diff_difftastic_color', 1)
+endfunction
+
+" --- ANSI colour -> Vim highlights ------------------------------------------
+"
+" difftastic marks additions and removals ONLY with colour: its plain output
+" has no +/- gutter, and in side-by-side mode a changed line is structurally
+" identical to an unchanged one. So the escapes are the only signal, and they
+" also carry difftastic's sub-word spans (the part that makes it worth using).
+" We therefore run difft with DFT_COLOR=always, strip the escapes out of the
+" text, and re-apply them as Vim matches.
+
+" Highlight group for an SGR parameter body such as '91;1'; '' means none.
+" Unrecognised codes clear the group rather than inherit, so enabling
+" DFT_SYNTAX_HIGHLIGHT cannot smear red/green across unrelated text.
+function! s:sgr_group(params) abort
+  for l:code in split(a:params, ';')
+    if l:code ==# '91' || l:code ==# '31'
+      return 'SemanticCtagsDiffRemoved'
+    elseif l:code ==# '92' || l:code ==# '32'
+      return 'SemanticCtagsDiffAdded'
+    elseif l:code ==# '93' || l:code ==# '33'
+      return 'SemanticCtagsDiffFile'
+    elseif l:code ==# '2'
+      return 'SemanticCtagsDiffDim'
+    endif
+  endfor
+  return ''
+endfunction
+
+" Split one line into [text_without_escapes, spans], each span
+" {'col': byte col (1-based), 'len': byte length, 'group': highlight}.
+function! s:split_ansi(line) abort
+  let l:text = ''
+  let l:spans = []
+  let l:group = ''
+  let l:rest = a:line
+
+  while !empty(l:rest)
+    let l:idx = match(l:rest, "\e\\[[0-9;]*m")
+    let l:chunk = l:idx < 0 ? l:rest : strpart(l:rest, 0, l:idx)
+
+    if !empty(l:chunk) && !empty(l:group)
+      call add(l:spans, {'col': strlen(l:text) + 1, 'len': strlen(l:chunk), 'group': l:group})
+    endif
+    let l:text .= l:chunk
+
+    if l:idx < 0
+      break
+    endif
+    " strip the leading "\e[" and trailing "m" to get the parameter body.
+    let l:seq = matchstr(l:rest, "\e\\[[0-9;]*m", l:idx)
+    let l:group = s:sgr_group(strpart(l:seq, 2, strlen(l:seq) - 3))
+    let l:rest = strpart(l:rest, l:idx + strlen(l:seq))
+  endwhile
+
+  return [l:text, l:spans]
+endfunction
+
+" Strip ANSI from {lines}; returns [clean_lines, {group: [[lnum, col, len], ...]}]
+" with line numbers shifted by {lnum_offset} to account for the buffer header.
+" Public so the parser can be checked without difftastic installed.
+function! semantic_ctags_diff#difftastic#strip_ansi(lines, lnum_offset) abort
+  let l:clean = []
+  let l:by_group = {}
+  let l:lnum = a:lnum_offset
+
+  for l:line in a:lines
+    let l:lnum += 1
+    let [l:text, l:spans] = s:split_ansi(l:line)
+    call add(l:clean, l:text)
+    for l:span in l:spans
+      let l:by_group[l:span.group] = get(l:by_group, l:span.group, [])
+            \ + [[l:lnum, l:span.col, l:span.len]]
+    endfor
+  endfor
+
+  return [l:clean, l:by_group]
+endfunction
+
+" ponytail: matchaddpos() is window-local and redraw cost grows with the match
+" count, so huge diffs stop being highlighted past the cap instead of crawling.
+" Upgrade path: buffer-local text properties (prop_add / nvim_buf_add_highlight).
+function! s:apply_highlights(by_group) abort
+  call clearmatches()
+  let l:budget = get(g:, 'semantic_ctags_diff_difftastic_max_highlights', 2000)
+
+  for [l:group, l:positions] in items(a:by_group)
+    let l:i = 0
+    while l:i < len(l:positions) && l:budget > 0
+      " matchaddpos() takes at most 8 positions per call.
+      call matchaddpos(l:group, l:positions[l:i : l:i + 7])
+      let l:i += 8
+      let l:budget -= 8
+    endwhile
+  endfor
+endfunction
+
+" --- scratch windows ---------------------------------------------------------
+
 " Scratch window setup shared by every difftastic view.
-function! s:make_scratch(lines) abort
+function! s:make_scratch(lines, by_group) abort
   setlocal buftype=nofile
   setlocal bufhidden=wipe
   setlocal noswapfile
@@ -24,27 +125,28 @@ function! s:make_scratch(lines) abort
   call setline(1, a:lines)
   setlocal nomodifiable
   setlocal filetype=
+  call s:apply_highlights(a:by_group)
 endfunction
 
-function! s:open_scratch(title, lines, open_cmd) abort
+function! s:open_scratch(title, lines, by_group, open_cmd) abort
   execute a:open_cmd
-  call s:make_scratch(a:lines)
+  call s:make_scratch(a:lines, a:by_group)
   execute 'file ' . fnameescape(a:title)
 endfunction
 
 " Open {lines} in the tab's tagged difftastic window, creating it if needed.
 " Reuse matters for the Flog <CR> loop: without it every commit stacks a split.
-function! s:open_or_reuse(title, lines, open_cmd) abort
+function! s:open_or_reuse(title, lines, by_group, open_cmd) abort
   for l:win in range(1, winnr('$'))
     if getbufvar(winbufnr(l:win), 'semantic_ctags_diff_difftastic_view', 0)
       call win_gotoid(win_getid(l:win))
-      call s:make_scratch(a:lines)
+      call s:make_scratch(a:lines, a:by_group)
       return
     endif
   endfor
 
   execute a:open_cmd
-  call s:make_scratch(a:lines)
+  call s:make_scratch(a:lines, a:by_group)
   let b:semantic_ctags_diff_difftastic_view = 1
   " Name is cosmetic; a stale buffer from a closed tab may already hold it.
   try
@@ -70,9 +172,11 @@ endfunction
 " difftastic gets old/new blobs straight from git, exactly like Fugitive's diff.
 " {ref} may be a string (single rev) or a list of revs, each escaped separately.
 function! semantic_ctags_diff#difftastic#command(ref, path, repo) abort
+  " Colour is the only add/remove signal difftastic emits; see s:split_ansi().
+  " Syntax highlighting stays off by default so red/green is all that shows.
   let l:env = 'DFT_DISPLAY=' . shellescape(g:semantic_ctags_diff_difftastic_display)
-        \ . ' DFT_COLOR=never'
-        \ . ' DFT_SYNTAX_HIGHLIGHT=off'
+        \ . ' DFT_COLOR=' . (s:color_enabled() ? 'always' : 'never')
+        \ . ' DFT_SYNTAX_HIGHLIGHT=' . shellescape(g:semantic_ctags_diff_difftastic_syntax)
         \ . ' DFT_CONTEXT=' . shellescape(string(g:semantic_ctags_diff_difftastic_context))
         \ . ' DFT_WIDTH=' . shellescape(string(&columns))
 
@@ -144,10 +248,6 @@ function! semantic_ctags_diff#difftastic#commit_file(commit, path, repo, ...) ab
   endif
 
   let l:short = strpart(a:commit, 0, 10)
-  if empty(filter(copy(l:lines), '!empty(trim(v:val))'))
-    let l:lines = [a:path . ' is unchanged in ' . l:short . '.']
-  endif
-
   let l:header = [
         \ 'Difftastic — ' . a:path,
         \ 'Commit:  ' . l:short . (empty(get(l:opts, 'subject', '')) ? '' : '  ' . l:opts.subject),
@@ -156,8 +256,15 @@ function! semantic_ctags_diff#difftastic#commit_file(commit, path, repo, ...) ab
         \ '',
         \ ]
 
+  let [l:body, l:groups] = semantic_ctags_diff#difftastic#strip_ansi(l:lines, len(l:header))
+  if empty(filter(copy(l:body), '!empty(trim(v:val))'))
+    let l:body = [a:path . ' is unchanged in ' . l:short . '.']
+    let l:groups = {}
+  endif
+
   let l:origin = win_getid()
-  call s:open_or_reuse(get(l:opts, 'title', 'difftastic://' . a:path), l:header + l:lines, l:open_cmd)
+  call s:open_or_reuse(get(l:opts, 'title', 'difftastic://' . a:path),
+        \ l:header + l:body, l:groups, l:open_cmd)
   if !get(l:opts, 'focus', 0)
     call win_gotoid(l:origin)
   endif
@@ -194,10 +301,6 @@ function! semantic_ctags_diff#difftastic#diff(open_cmd, ref) abort
     return
   endif
 
-  if empty(filter(copy(l:lines), '!empty(trim(v:val))'))
-    let l:lines = ['No differences for ' . l:rel . ' against ' . l:ref . '.']
-  endif
-
   let l:header = [
         \ 'Difftastic diff',
         \ '===============',
@@ -209,5 +312,11 @@ function! semantic_ctags_diff#difftastic#diff(open_cmd, ref) abort
         \ '',
         \ ]
 
-  call s:open_scratch('Difftastic ' . l:rel, l:header + l:lines, a:open_cmd)
+  let [l:body, l:groups] = semantic_ctags_diff#difftastic#strip_ansi(l:lines, len(l:header))
+  if empty(filter(copy(l:body), '!empty(trim(v:val))'))
+    let l:body = ['No differences for ' . l:rel . ' against ' . l:ref . '.']
+    let l:groups = {}
+  endif
+
+  call s:open_scratch('Difftastic ' . l:rel, l:header + l:body, l:groups, a:open_cmd)
 endfunction

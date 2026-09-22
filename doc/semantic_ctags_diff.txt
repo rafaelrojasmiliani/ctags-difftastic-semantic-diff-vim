@@ -307,6 +307,33 @@ g:semantic_ctags_diff_difftastic_display          *g:semantic_ctags_diff_difftas
 g:semantic_ctags_diff_difftastic_context          *g:semantic_ctags_diff_difftastic_context*
       DFT_CONTEXT lines around each change. Default: 3
 
+g:semantic_ctags_diff_difftastic_color            *g:semantic_ctags_diff_difftastic_color*
+      Colourise the diff: removals red, additions green, down to the sub-word
+      spans difftastic identifies. Set to 0 for plain text. Default: 1
+
+      difftastic marks additions and removals ONLY with colour — its plain
+      output has no +/- gutter, and in side-by-side mode a changed line is
+      structurally identical to an unchanged one. So the plugin runs difft
+      with DFT_COLOR=always, strips the escapes out of the buffer text, and
+      re-applies them with |matchaddpos()|.
+
+      Colours come from these groups, overridable in your colorscheme: >
+
+          highlight SemanticCtagsDiffRemoved ctermfg=Red      guifg=#ff5f5f
+          highlight SemanticCtagsDiffAdded   ctermfg=Green    guifg=#00d75f
+          highlight SemanticCtagsDiffFile    ctermfg=Yellow   guifg=#ffd75f
+          highlight SemanticCtagsDiffDim     ctermfg=DarkGray guifg=#808080
+<
+g:semantic_ctags_diff_difftastic_syntax           *g:semantic_ctags_diff_difftastic_syntax*
+      DFT_SYNTAX_HIGHLIGHT value. 'off' keeps red/green as the only colours in
+      the buffer; 'on' adds difftastic's language syntax colouring, which
+      competes with the add/remove signal. Default: 'off'
+
+g:semantic_ctags_diff_difftastic_max_highlights   *g:semantic_ctags_diff_difftastic_max_highlights*
+      Cap on highlighted spans per diff. Vim redraw slows down as the match
+      count grows, so very large diffs stop being colourised past this point
+      rather than crawling. Default: 2000
+
 Example ~/.vimrc: >
 
     let g:semantic_ctags_diff_default_base = 'develop'

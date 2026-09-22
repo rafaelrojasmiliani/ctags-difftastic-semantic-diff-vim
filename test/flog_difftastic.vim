@@ -42,12 +42,62 @@ call assert_match('src/a\.cpp', s:cmd)
 call assert_notmatch('src/b\.cpp', s:cmd)
 
 " The point of the feature: one commit, one file — b.cpp must not appear.
-let s:out = system(semantic_ctags_diff#difftastic#command(
-      \ [s:head . '^!'], 'src/a.cpp', s:repo))
-call assert_match('a\.cpp', s:out)
-call assert_notmatch('b\.cpp', s:out)
+" Needs difftastic; git aborts with exit 128 when the external diff is missing.
+if executable(g:semantic_ctags_diff_difft)
+  let s:out = system(semantic_ctags_diff#difftastic#command(
+        \ [s:head . '^!'], 'src/a.cpp', s:repo))
+  call assert_match('a\.cpp', s:out)
+  call assert_notmatch('b\.cpp', s:out)
+endif
 
 call system('rm -rf ' . shellescape(s:repo))
+
+" --- ANSI colour parsing ----------------------------------------------------
+" difftastic signals add/remove ONLY through colour, so this parser is the
+" whole feature. Checked against canned output so it runs without difftastic.
+
+" Collect {group: [highlighted text, ...]} from a parsed line.
+function! s:spans(line) abort
+  let [l:clean, l:groups] = semantic_ctags_diff#difftastic#strip_ansi([a:line], 0)
+  let l:out = {}
+  for [l:group, l:positions] in items(l:groups)
+    let l:out[l:group] = map(copy(l:positions),
+          \ {_, p -> strpart(l:clean[p[0] - 1], p[1] - 1, p[2])})
+  endfor
+  return [l:clean[0], l:out]
+endfunction
+
+" A real difftastic side-by-side line: red left half, green right half, with
+" sub-word spans (91 = removed, 92 = added, 2 = dim gutter).
+let s:line = "\e[91;1m3 \e[0mint \e[91mremoveMe\e[0m() { return \e[91m1\e[0m; }"
+      \ . "    \e[92;1m3 \e[0mint \e[92mmodify\e[0m() { return \e[92m4242\e[0m; }"
+let [s:clean, s:got] = s:spans(s:line)
+
+" Escapes must not survive into the buffer text.
+call assert_notmatch("\e", s:clean)
+call assert_match('int removeMe() { return 1; }', s:clean)
+
+call assert_equal(['3 ', 'removeMe', '1'], get(s:got, 'SemanticCtagsDiffRemoved', []))
+call assert_equal(['3 ', 'modify', '4242'], get(s:got, 'SemanticCtagsDiffAdded', []))
+
+" Unchanged lines are dim, and the file header is yellow.
+let [s:clean, s:got] = s:spans("\e[2m7 \e[0mint keep() { return 0; }")
+call assert_equal(['7 '], get(s:got, 'SemanticCtagsDiffDim', []))
+call assert_equal([], get(s:got, 'SemanticCtagsDiffAdded', []))
+let [s:clean, s:got] = s:spans("\e[1m\e[93msrc/x.cpp\e[39m\e[0m\e[2m --- C++\e[0m")
+call assert_equal(['src/x.cpp'], get(s:got, 'SemanticCtagsDiffFile', []))
+
+" Line numbers are offset by the buffer header, and plain text stays unmarked.
+let [s:clean, s:groups] = semantic_ctags_diff#difftastic#strip_ansi(
+      \ ['plain', "\e[92madded\e[0m"], 5)
+call assert_equal(['plain', 'added'], s:clean)
+call assert_equal([[7, 1, 5]], s:groups['SemanticCtagsDiffAdded'])
+
+" Colour off must leave DFT_COLOR=never so nothing needs stripping.
+let g:semantic_ctags_diff_difftastic_color = 0
+call assert_match('DFT_COLOR=never', semantic_ctags_diff#difftastic#command('HEAD', 'f.c', '/tmp'))
+let g:semantic_ctags_diff_difftastic_color = 1
+call assert_match('DFT_COLOR=always', semantic_ctags_diff#difftastic#command('HEAD', 'f.c', '/tmp'))
 
 " --- buffer maps applied to a floggraph -------------------------------------
 runtime autoload/semantic_ctags_diff/flog.vim

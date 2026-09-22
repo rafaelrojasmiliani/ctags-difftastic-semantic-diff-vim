@@ -262,13 +262,40 @@ external diff and render the result in a scratch buffer.
 Under the hood it runs, for the current file:
 
 ```bash
-DFT_DISPLAY=side-by-side DFT_COLOR=never \
+DFT_DISPLAY=side-by-side DFT_COLOR=always \
   git -C <worktree> -c diff.external=difft --no-pager diff --ext-diff <ref> -- <file>
 ```
 
 So difftastic receives the old/new blobs straight from git, exactly like
 `:Gdiffsplit` does for a normal diff. Output is a read-only scratch buffer with a
 header (file, ref, repo, exact command).
+
+### Colours
+
+Removals are **red**, additions are **green**, down to the sub-word spans
+difftastic identifies — in `int modify() { return 4242; }` only `4242` lights up,
+not the whole line.
+
+This needs `DFT_COLOR=always` rather than Vim syntax rules, because difftastic
+signals additions and removals **only** through colour: its plain output has no
+`+`/`-` gutter, and in side-by-side mode a changed line is structurally
+identical to an unchanged one. The plugin therefore strips the ANSI escapes out
+of the buffer text and re-applies them as `matchaddpos()` highlights.
+
+Override the groups in your colorscheme:
+
+```vim
+highlight SemanticCtagsDiffRemoved ctermfg=Red      guifg=#ff5f5f
+highlight SemanticCtagsDiffAdded   ctermfg=Green    guifg=#00d75f
+highlight SemanticCtagsDiffFile    ctermfg=Yellow   guifg=#ffd75f
+highlight SemanticCtagsDiffDim     ctermfg=DarkGray guifg=#808080
+```
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `g:semantic_ctags_diff_difftastic_color` | `1` | `0` renders plain text |
+| `g:semantic_ctags_diff_difftastic_syntax` | `'off'` | `'on'` adds difftastic's language syntax colours, which compete with red/green |
+| `g:semantic_ctags_diff_difftastic_max_highlights` | `2000` | Spans per diff before colouring stops (Vim redraw slows as matches grow) |
 
 Notes:
 
@@ -395,7 +422,8 @@ that file only** — never the other files in the commit:
 
 Pressing `<CR>` on another commit **reuses the same window** instead of stacking
 splits, and the cursor stays in the graph so you can keep browsing. `go` still
-opens Flog's own whole-commit view.
+opens Flog's own whole-commit view. Removals show red and additions green — see
+[Colours](#colours).
 
 | Setting | Default | Meaning |
 |---------|---------|---------|
