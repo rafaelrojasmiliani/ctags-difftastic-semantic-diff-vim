@@ -19,6 +19,20 @@ let g:semantic_ctags_diff_flog_open =
 let g:semantic_ctags_diff_flog_file_maps =
       \ get(g:, 'semantic_ctags_diff_flog_file_maps', 1)
 
+" In a :FlogFile graph, <CR> opens a horizontal split below showing the
+" difftastic diff of the commit under the cursor for that one file.
+let g:semantic_ctags_diff_flog_difftastic =
+      \ get(g:, 'semantic_ctags_diff_flog_difftastic', 1)
+" Height of that split; 0 splits evenly.
+let g:semantic_ctags_diff_flog_difftastic_height =
+      \ get(g:, 'semantic_ctags_diff_flog_difftastic_height', 20)
+" Split modifier: 'botright' (full width, below) or 'belowright'.
+let g:semantic_ctags_diff_flog_difftastic_split =
+      \ get(g:, 'semantic_ctags_diff_flog_difftastic_split', 'botright')
+" 1 moves the cursor into the diff; 0 keeps it in the graph to keep browsing.
+let g:semantic_ctags_diff_flog_difftastic_focus =
+      \ get(g:, 'semantic_ctags_diff_flog_difftastic_focus', 0)
+
 function! s:flog_symbol(open_cmd, kind_filter) abort
   call semantic_ctags_diff#flog_current_symbol(a:open_cmd, a:kind_filter)
 endfunction
@@ -67,6 +81,14 @@ endif
 if exists(':FlogsplitFile') != 2
   command! -bar FlogsplitFile call s:flog_file('Flogsplit')
 endif
+
+" Difftastic diff of the commit under the cursor, for the graph's file only.
+" <CR> is mapped to this in :FlogFile graphs; the command allows manual use.
+if exists(':FlogDifftastic') != 2
+  command! -bar FlogDifftastic call semantic_ctags_diff#flog#difftastic_at_cursor()
+endif
+nnoremap <silent> <Plug>(SemanticCtagsFlogDifftastic)
+      \ :<C-u>call semantic_ctags_diff#flog#difftastic_at_cursor()<CR>
 
 " #include under cursor -> Flog history of the resolved header (repo-relative).
 if exists(':FlogInclude') != 2

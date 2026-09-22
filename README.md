@@ -219,7 +219,8 @@ is recomputed automatically. Same commit pair → instant reload.
 | `:SemanticCtagsDiffFlogSymbol` | Pick symbol → Flog history in a new tab (if flog installed) |
 | `:FlogSymbol` / `:FlogFunction` / `:FlogClass` / `:FlogNamespace` | Cursor symbol history in a **new tab** |
 | `:FlogsplitSymbol` / `:FlogsplitFunction` / ... | Cursor symbol history in a split |
-| `:FlogFile` / `:FlogsplitFile` | **Single-file** history (`-path=`); `<CR>`/`dd` show only that file |
+| `:FlogFile` / `:FlogsplitFile` | **Single-file** history (`-path=`); `<CR>` = difftastic diff of that commit, that file only |
+| `:FlogDifftastic` | Same as `<CR>` above, by name |
 | `:FlogInclude` / `:FlogsplitInclude` | `#include` under cursor → history of the resolved header |
 | `:Gdifftastic [ref]` | Difftastic diff of current file vs `ref` (default `HEAD`), horizontal split |
 | `:Gvdifftastic [ref]` | Same, vertical split |
@@ -373,6 +374,40 @@ default flog keys still open the **whole commit** (`<CR>`) or diff all files
 Implementation: `Flog -path=<git-relative-path>` plus buffer-local remaps to
 vim-flog's path-scoped plugs (`FlogVSplitCommitPathsRight`, `FlogVDiffSplitPathsRight`).
 Disable remaps with `let g:semantic_ctags_diff_flog_file_maps = 0`.
+
+#### `<CR>` → difftastic diff of one commit, one file
+
+In a `:FlogFile` graph, pressing `<CR>` on a commit opens a **horizontal split
+below** showing the [difftastic](#difftastic-in-vim) diff of **that commit for
+that file only** — never the other files in the commit:
+
+```
+┌────────────────────────────────┐
+│ Flog graph (-path=Source/X.cpp)│   <- cursor stays here
+│ * a1b2c3 Fix approx tolerance  │
+│ * d4e5f6 Add reset()           │
+├────────────────────────────────┤
+│ Difftastic — Source/X.cpp      │   <- <CR> fills this, reusing the window
+│ Commit: a1b2c3  Fix approx …   │
+│ 12  bool isApprox(…)  12 bool… │
+└────────────────────────────────┘
+```
+
+Pressing `<CR>` on another commit **reuses the same window** instead of stacking
+splits, and the cursor stays in the graph so you can keep browsing. `go` still
+opens Flog's own whole-commit view.
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `g:semantic_ctags_diff_flog_difftastic` | `1` | `0` restores Flog's commit view on `<CR>` |
+| `g:semantic_ctags_diff_flog_difftastic_height` | `20` | Split height; `0` = even split |
+| `g:semantic_ctags_diff_flog_difftastic_split` | `'botright'` | Or `'belowright'` |
+| `g:semantic_ctags_diff_flog_difftastic_focus` | `0` | `1` jumps into the diff window |
+
+The diff runs `git -c diff.external=difft diff <sha>^! -- <path>`, so difftastic
+receives the blobs straight from git. Root commits have no parent, so they are
+diffed against the empty tree instead (`git diff <sha>^!` would otherwise
+silently show a working-tree diff).
 
 `#include` resolution searches: directory of the current file → repo root →
 common prefixes (`include/`, `src/`, …) → **`git ls-files`** (suffix match) →

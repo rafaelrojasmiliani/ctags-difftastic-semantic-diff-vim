@@ -170,6 +170,17 @@ TAB COMPLETION                                  *semantic-ctags-diff-completion*
       (Flog -path=). Remaps <CR> and dd in the graph so side windows show
       only that file's changes, not the whole commit.
 
+      <CR> opens a horizontal split below the graph containing the
+      |difftastic| diff of the commit under the cursor, restricted to that
+      one file. Pressing <CR> on another commit reuses the same window, and
+      the cursor stays in the graph so you can keep browsing. Use go for
+      Flog's own whole-commit view.
+
+:FlogDifftastic                                   *:FlogDifftastic*
+      (vim-flog only) Same as <CR> above, callable by name. Requires a graph
+      opened with :FlogFile (or :Flog -path=) so a single file is in scope.
+      Also available as <Plug>(SemanticCtagsFlogDifftastic).
+
 :FlogInclude / :FlogsplitInclude                  *:FlogInclude*
       (vim-flog only) Resolve #include on the cursor line, then open file
       history like :FlogFile for the header.
@@ -270,6 +281,22 @@ g:semantic_ctags_diff_flog_open                   *g:semantic_ctags_diff_flog_op
 g:semantic_ctags_diff_flog_file_maps              *g:semantic_ctags_diff_flog_file_maps*
       When :FlogFile/:FlogInclude open a floggraph buffer, remap <CR> and dd to
       path-scoped commit/diff views. Default: 1
+
+g:semantic_ctags_diff_flog_difftastic             *g:semantic_ctags_diff_flog_difftastic*
+      In those graphs, make <CR> show the difftastic diff of the commit under
+      the cursor for that file only. Set to 0 to restore Flog's path-scoped
+      commit view on <CR>. Ignored when difft is not executable. Default: 1
+
+g:semantic_ctags_diff_flog_difftastic_height      *g:semantic_ctags_diff_flog_difftastic_height*
+      Height of that split in lines; 0 splits evenly. Default: 20
+
+g:semantic_ctags_diff_flog_difftastic_split       *g:semantic_ctags_diff_flog_difftastic_split*
+      Split modifier for the diff window: 'botright' (full width, under
+      everything) or 'belowright' (under the graph only). Default: 'botright'
+
+g:semantic_ctags_diff_flog_difftastic_focus       *g:semantic_ctags_diff_flog_difftastic_focus*
+      1 moves the cursor into the diff window, 0 keeps it in the graph so you
+      can keep pressing <CR> on other commits. Default: 0
 
 g:semantic_ctags_diff_difft                       *g:semantic_ctags_diff_difft*
       difftastic executable for :Gdifftastic. Default: 'difft'
