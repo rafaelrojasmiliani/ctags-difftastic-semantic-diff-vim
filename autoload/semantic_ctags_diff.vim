@@ -104,6 +104,15 @@ endfunction
 " --- Repo and Python project discovery --------------------------------------
 
 function! semantic_ctags_diff#repo_root() abort
+  " Buffers we create record the repository they belong to. Without this the
+  " answer depends on which buffer happens to be active: a scratch buffer has
+  " no file, so fugitive and getcwd() fall back to the *superproject* when the
+  " analysed repo is a submodule, and every rev and path we then hand to git
+  " belongs to the wrong repository.
+  if !empty(get(b:, 'semantic_ctags_diff_repo', ''))
+    return b:semantic_ctags_diff_repo
+  endif
+
   if get(g:, 'semantic_ctags_diff_use_fugitive_worktree', 1) && exists('*FugitiveWorkTree')
     let l:worktree = FugitiveWorkTree()
     if !empty(l:worktree)
@@ -295,7 +304,12 @@ endfunction
 
 " Per-repo cache folder under /tmp; files named <base_sha>..<head_sha>.<format>.
 function! semantic_ctags_diff#_repo_cache_dir(repo) abort
-  let l:name = semantic_ctags_diff#_sanitize_cache_name(fnamemodify(a:repo, ':t'))
+  " Strip trailing separators before taking the basename: repo paths arrive as
+  " '/path/to/name/' from fnamemodify(..., ':p'), and ':t' on that is empty,
+  " which collapsed every repository - a submodule and its superproject
+  " included - into a single shared 'repo' cache directory.
+  let l:base = fnamemodify(substitute(a:repo, '[\/]\+$', '', ''), ':t')
+  let l:name = semantic_ctags_diff#_sanitize_cache_name(l:base)
   if empty(l:name)
     let l:name = 'repo'
   endif
@@ -513,6 +527,9 @@ function! semantic_ctags_diff#run(base, head, format, ...) abort
   endif
 
   call semantic_ctags_diff#open_scratch(l:title, l:body, l:ft)
+  " Pin the analysed repo to the report so refreshing or jumping from it cannot
+  " drift to the superproject when l:repo is a submodule.
+  let b:semantic_ctags_diff_repo = l:repo
   if a:format !=# 'json'
     call semantic_ctags_diff#_setup_nav_maps()
   endif
@@ -582,7 +599,7 @@ function! semantic_ctags_diff#_json_cache_id_for(base, head, ...) abort
     return {}
   endif
   try
-    let l:repo = !empty(s:last_repo) ? s:last_repo : semantic_ctags_diff#repo_root()
+    let l:repo = s:repo()
     let l:refs = semantic_ctags_diff#_resolve_refs(l:repo, a:base, a:head)
     if empty(l:refs[0]) || empty(l:refs[1])
       return {}
@@ -935,7 +952,7 @@ function! semantic_ctags_diff#_open_symbol_in_flog(choice) abort
     return
   endif
 
-  let l:repo = !empty(s:last_repo) ? s:last_repo : semantic_ctags_diff#repo_root()
+  let l:repo = s:repo()
   let l:abs_path = simplify(l:repo . '/' . a:choice.path)
 
   if !filereadable(l:abs_path)
@@ -1218,30 +1235,57 @@ function! s:open_working(abs, line, mode) abort
   normal! zz
 endfunction
 
-function! s:open_fugitive(rev, path, line, mode) abort
-  if exists(':Gedit') != 2
-    echoerr 'semantic_ctags_diff: vim-fugitive required to open ' . a:rev . ':' . a:path
-    return
-  endif
-  let l:cmds = {'edit': 'Gedit', 'split': 'Gsplit', 'vsplit': 'Gvsplit', 'tab': 'Gtabedit'}
-  let l:obj = a:rev . ':' . a:path
-  call semantic_ctags_diff#_dbg('open fugitive object: ' . l:obj)
-  execute get(l:cmds, a:mode, 'Gedit') . ' ' . fnameescape(l:obj)
-  call cursor(a:line, 1)
-  normal! zz
+" The repository the report was generated from, which is not necessarily the
+" one fugitive would infer: the :G* commands resolve against the current
+" buffer, and the report is a scratch buffer. When the analysed repo is a
+" submodule that lands on the *superproject*, where neither our revisions nor
+" our paths exist ("Not a valid object name <superproject-HEAD>:<sub/path>").
+function! s:repo() abort
+  return !empty(s:last_repo) ? s:last_repo : semantic_ctags_diff#repo_root()
 endfunction
 
-" Focus the window in this tab showing {bufnr} (or the other one when
-" {want_buf} is 0), then put the cursor on {line}.
-function! s:focus_pane(bufnr, want_buf, line) abort
-  for l:w in range(1, winnr('$'))
-    let l:is_match = winbufnr(l:w) == a:bufnr
-    if l:is_match == a:want_buf
-      call win_gotoid(win_getid(l:w))
-      break
-    endif
-  endfor
-  call cursor(max([1, a:line]), 1)
+" Git dir of s:repo(). For a submodule this is the superproject's
+" .git/modules/<name>, which is why it must be resolved from the worktree path
+" rather than assumed to be <repo>/.git.
+function! s:git_dir() abort
+  let l:repo = s:repo()
+  if empty(l:repo) || !exists('*FugitiveExtractGitDir')
+    return ''
+  endif
+  return FugitiveExtractGitDir(l:repo)
+endfunction
+
+" Buffer name for <rev>:<path> resolved against s:repo(), '' if unavailable.
+function! s:fugitive_object(rev, path) abort
+  let l:dir = s:git_dir()
+  if empty(l:dir) || !exists('*FugitiveFind')
+    return ''
+  endif
+  return FugitiveFind(a:rev . ':' . a:path, l:dir)
+endfunction
+
+function! s:rev_has_path(rev, path) abort
+  let l:repo = s:repo()
+  if empty(l:repo)
+    return 0
+  endif
+  call system('git -C ' . shellescape(l:repo) . ' cat-file -e '
+        \ . shellescape(a:rev . ':' . a:path))
+  return v:shell_error == 0
+endfunction
+
+function! s:open_fugitive(rev, path, line, mode) abort
+  let l:file = s:fugitive_object(a:rev, a:path)
+  if empty(l:file)
+    echoerr 'semantic_ctags_diff: vim-fugitive required to open '
+          \ . a:rev . ':' . a:path
+    return
+  endif
+  let l:cmds = {'edit': 'edit', 'split': 'split', 'vsplit': 'vsplit', 'tab': 'tabedit'}
+  call semantic_ctags_diff#_dbg(
+        \ 'open ' . a:rev . ':' . a:path . ' in ' . s:repo() . ' -> ' . l:file)
+  execute get(l:cmds, a:mode, 'edit') . ' ' . fnameescape(l:file)
+  call cursor(a:line, 1)
   normal! zz
 endfunction
 
@@ -1256,45 +1300,47 @@ function! s:open_vdiff_tab(path, line, want_head) abort
     echoerr 'semantic_ctags_diff: no base/head recorded; run a diff first'
     return
   endif
-  if exists(':Gtabedit') != 2 || exists(':Gvdiffsplit') != 2
+  if empty(s:git_dir())
     echoerr 'semantic_ctags_diff: vim-fugitive is required for the diff view'
     return
   endif
+  let l:repo = s:repo()
+  call semantic_ctags_diff#_dbg('vdiff: repo=' . l:repo
+        \ . ' git_dir=' . s:git_dir() . ' base=' . s:last_base
+        \ . ' head=' . s:last_head . ' path=' . a:path . ' line=' . a:line)
 
-  let l:head_obj = s:last_head . ':' . a:path
-  let l:base_obj = s:last_base . ':' . a:path
-  let l:first = a:want_head ? l:head_obj : l:base_obj
-  let l:other = a:want_head ? l:base_obj : l:head_obj
+  " Land in the revision that has the line; a file added or deleted outright
+  " only exists in one of them, in which case it opens undiffed.
+  let l:present = []
+  for l:rev in (a:want_head ? [s:last_head, s:last_base] : [s:last_base, s:last_head])
+    if s:rev_has_path(l:rev, a:path)
+      call add(l:present, l:rev)
+    else
+      call semantic_ctags_diff#_dbg('vdiff: no ' . l:rev . ':' . a:path)
+    endif
+  endfor
+  if empty(l:present)
+    echoerr 'semantic_ctags_diff: ' . a:path . ' is in neither ' . s:last_base
+          \ . ' nor ' . s:last_head . ' of ' . l:repo
+    return
+  endif
 
-  call semantic_ctags_diff#_dbg('vdiff tab: ' . l:base_obj . ' | ' . l:head_obj)
-  try
-    execute 'Gtabedit ' . fnameescape(l:first)
-  catch /.*/
-    " The file does not exist in that revision (added or deleted outright).
-    try
-      execute 'Gtabedit ' . fnameescape(l:other)
-    catch /.*/
-      echoerr 'semantic_ctags_diff: cannot open ' . a:path . ' in ' . s:last_base . ' or ' . s:last_head
-      return
-    endtry
+  execute 'tabedit ' . fnameescape(s:fugitive_object(l:present[0], a:path))
+  if len(l:present) == 1
     call cursor(max([1, a:line]), 1)
     normal! zz
     return
-  endtry
+  endif
 
-  let l:first_buf = bufnr('%')
-  " leftabove keeps the older revision on the left, as :Gdiffsplit does.
-  try
-    execute 'leftabove Gvdiffsplit ' . fnameescape(l:other)
-  catch /.*/
-    call semantic_ctags_diff#_dbg('vdiffsplit failed for ' . l:other . ': ' . v:exception)
-    call cursor(max([1, a:line]), 1)
-    normal! zz
-    return
-  endtry
-
-  " The line we want is in the revision opened first.
-  call s:focus_pane(l:first_buf, 1, a:line)
+  let l:landed = win_getid()
+  diffthis
+  " Keep the older revision on the left whichever side we landed in.
+  execute (l:present[1] ==# s:last_base ? 'leftabove' : 'rightbelow')
+        \ . ' vsplit ' . fnameescape(s:fugitive_object(l:present[1], a:path))
+  diffthis
+  call win_gotoid(l:landed)
+  call cursor(max([1, a:line]), 1)
+  normal! zz
 endfunction
 
 " <CR> in the report: show the symbol under the cursor as a fugitive diff.
@@ -1302,6 +1348,12 @@ function! semantic_ctags_diff#open_diff_under_cursor() abort
   let l:target = semantic_ctags_diff#_target_at_cursor()
   if empty(l:target)
     echo 'semantic_ctags_diff: no symbol under cursor'
+    return
+  endif
+  " Added symbols are in the working tree, so <CR> jumps straight to them.
+  " Only removed and modified symbols need the two-revision diff.
+  if index(['added', 'file_scope'], l:target.classification) >= 0
+    call semantic_ctags_diff#open_symbol_under_cursor('edit')
     return
   endif
   call s:open_vdiff_tab(
@@ -1315,7 +1367,7 @@ function! semantic_ctags_diff#open_symbol_under_cursor(mode) abort
     return
   endif
 
-  let l:repo = !empty(s:last_repo) ? s:last_repo : semantic_ctags_diff#repo_root()
+  let l:repo = s:repo()
   let l:abs = simplify(l:repo . '/' . l:target.path)
 
   " Removed symbols no longer exist in the working tree: open them from the

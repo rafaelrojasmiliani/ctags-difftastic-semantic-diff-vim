@@ -6,6 +6,7 @@ scriptencoding utf-8
 " Set before :Flog/-path= opens; consumed by FileType floggraph autocmd below.
 let g:semantic_ctags_diff_flog_file_pending = 0
 let g:semantic_ctags_diff_flog_file_pending_path = ''
+let g:semantic_ctags_diff_flog_file_pending_repo = ''
 
 function! semantic_ctags_diff#flog#git_relative_path(file) abort
   if empty(a:file)
@@ -330,6 +331,13 @@ function! semantic_ctags_diff#flog#open_path(open_cmd, git_path) abort
 
   let g:semantic_ctags_diff_flog_file_pending = 1
   let g:semantic_ctags_diff_flog_file_pending_path = a:git_path
+  " Carry the repo we resolved the path against into the graph buffer, so a
+  " submodule graph keeps using the submodule and not the superproject.
+  try
+    let g:semantic_ctags_diff_flog_file_pending_repo = semantic_ctags_diff#repo_root()
+  catch /.*/
+    let g:semantic_ctags_diff_flog_file_pending_repo = ''
+  endtry
   call semantic_ctags_diff#_dbg('flog file: ' . l:open . ' -path=' . a:git_path)
   echo 'Flog file history: ' . a:git_path . ' (<CR> and dd = this file only)'
   execute l:open . ' -path=' . fnameescape(a:git_path)
@@ -379,5 +387,7 @@ function! semantic_ctags_diff#flog#_on_floggraph() abort
   " state is version-dependent, this is not.
   let b:semantic_ctags_diff_flog_path = g:semantic_ctags_diff_flog_file_pending_path
   let g:semantic_ctags_diff_flog_file_pending_path = ''
+  let b:semantic_ctags_diff_repo = get(g:, 'semantic_ctags_diff_flog_file_pending_repo', '')
+  let g:semantic_ctags_diff_flog_file_pending_repo = ''
   call semantic_ctags_diff#flog#apply_file_maps()
 endfunction

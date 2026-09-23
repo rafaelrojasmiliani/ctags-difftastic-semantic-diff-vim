@@ -344,9 +344,45 @@ Example ~/.vimrc: >
 ==============================================================================
 SUBMODULES                                  *semantic-ctags-diff-submodules*
 
+Submodules are supported as a first-class case, in both directions.
+
+Analysing a submodule ~
+
+Run :SemanticCtagsDiff from any file inside the submodule and the submodule is
+what gets diffed, never the superproject. Two things make this hold:
+
+  - The repository is resolved once, when the report is generated, and pinned
+    to the report buffer in b:semantic_ctags_diff_repo. Refreshing or jumping
+    from the report cannot drift to another repository.
+  - Git objects are resolved with an explicit git dir. A submodule's .git is a
+    *file* pointing at <superproject>/.git/modules/<name>, so the git dir is
+    looked up from the worktree path, not assumed to be <repo>/.git.
+
+This matters because fugitive's :G* commands resolve against the *current*
+buffer. The report is a scratch buffer, so letting fugitive infer the repo
+looked revisions up in the superproject instead, giving errors like: >
+
+    Not a valid object name <superproject-HEAD>:<path/inside/submodule>
+
+Refs resolve in the submodule too, so a branch that exists only there (and not
+in the superproject) works normally.
+
+Analysing a repository that contains submodules ~
+
+Submodule pointers (gitlinks) appear in `git diff` as changed entries but are
+not files. They are skipped by the extension filter and reported as
+`extension_not_included`; a nested submodule's contents are not analysed.
+Diff it directly if you need its symbols.
+
+Each repository caches under its own directory, so a submodule and its
+superproject never share cached reports. See |g:semantic_ctags_diff_cache_dir|.
+
+Resolution order ~
+
 Repository root is resolved via:
-  1. FugitiveWorkTree() when vim-fugitive is loaded
-  2. git -C <file-dir-or-cwd> rev-parse --show-toplevel
+  1. b:semantic_ctags_diff_repo, pinned on report and :FlogFile buffers
+  2. FugitiveWorkTree() when vim-fugitive is loaded
+  3. git -C <file-dir-or-cwd> rev-parse --show-toplevel
 
 Python sources are resolved separately (no pip install required):
   1. g:semantic_ctags_diff_root if set
