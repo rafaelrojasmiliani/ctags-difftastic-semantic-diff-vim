@@ -298,6 +298,18 @@ g:semantic_ctags_diff_flog_difftastic_focus       *g:semantic_ctags_diff_flog_di
       1 moves the cursor into the diff window, 0 keeps it in the graph so you
       can keep pressing <CR> on other commits. Default: 0
 
+g:semantic_ctags_diff_file_difftastic_height      *g:semantic_ctags_diff_file_difftastic_height*
+      Height, in lines, of the difftastic split opened by <CR> on a "Changed
+      files" entry. Default: 20
+
+g:semantic_ctags_diff_file_difftastic_split       *g:semantic_ctags_diff_file_difftastic_split*
+      Split modifier for that window: 'botright' or 'belowright'.
+      Default: 'botright'
+
+g:semantic_ctags_diff_file_difftastic_focus       *g:semantic_ctags_diff_file_difftastic_focus*
+      1 moves the cursor into the diff window, 0 leaves it in the file.
+      Default: 0
+
 g:semantic_ctags_diff_difft                       *g:semantic_ctags_diff_difft*
       difftastic executable for :Gdifftastic. Default: 'difft'
 
@@ -440,26 +452,46 @@ Report buffer maps ~
   The :SemanticCtagsDiff Markdown report lists symbol names only. Buffer-local
   maps show or open the symbol under the cursor:
 
-    <CR>   fugitive vertical diff in a new tab, on the changed line
+    <CR>   depends on the section (see below)
     gd     open the source in the current window
     o      open the source in a horizontal split
     gO     open the source in a vertical split
     O      open the source in a new tab
 
-  <CR> opens base:<path> and head:<path> side by side (:Gtabedit plus
-  leftabove :Gvdiffsplit, older revision on the left) and jumps to the line.
-  Removed symbols land in the base pane, since that is the only revision that
-  still contains them; everything else lands in head. A file present in only
-  one revision opens undiffed.
+  <CR> does whatever is most useful for the section it is pressed in:
+
+    Changed files      open the file in a new tab, with a |difftastic| diff of
+                       the whole base..head change split below it. Files git
+                       reports as deleted (D) do nothing, since there is
+                       nothing left to open.
+    Added symbols      jump straight to the symbol; it exists in the working
+                       tree, so there is nothing to compare.
+    Removed, Modified  a fugitive vertical diff in a new tab, on the changed
+                       line: base:<path> and head:<path> side by side, older
+                       revision on the left. Removed symbols land in the base
+                       pane, since that is the only revision still containing
+                       them; modified ones land in head. A file present in
+                       only one revision opens undiffed.
 
   gd/o/gO/O open the plain source: the working-tree file for added and modified
-  symbols, :Gedit <base>:<path> for removed ones.
+  symbols, <base>:<path> via fugitive for removed ones.
 
   The report prints no paths or line numbers, so every jump resolves its target
   from the cached JSON by qualified name; it is fetched on demand when only the
   Markdown report was run. All jumps require vim-fugitive.
 
 Report contents ~
+  The report opens with "Changed files", a git --name-status style list of
+  every file git reports as changed - including ones no symbols came out of,
+  such as binaries or extensions outside |g:semantic_ctags_diff_include|:
+
+    A  added      M  modified    R  renamed
+    D  deleted    C  copied      ?  unknown
+
+  Then added, removed, and modified symbols, each grouped by kind and listing
+  names only. Paths and line numbers are deliberately absent; the file list
+  above covers "what changed where", and every jump resolves its own target.
+
   The Markdown report filters ctags noise (the JSON keeps everything):
 
     - local variables and free / namespace-scope variables are dropped

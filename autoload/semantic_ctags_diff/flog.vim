@@ -229,11 +229,9 @@ endfunction
 " --- <CR> action: difftastic diff of this commit, this file only ------------
 
 function! s:difftastic_open_cmd() abort
-  let l:height = get(g:, 'semantic_ctags_diff_flog_difftastic_height', 20)
-  " Leave room for the graph above; 0 means "let Vim split evenly".
-  let l:height = l:height > 0 ? min([l:height, &lines - 6]) : 0
-  return get(g:, 'semantic_ctags_diff_flog_difftastic_split', 'botright')
-        \ . ' ' . (l:height > 0 ? l:height : '') . 'new'
+  return semantic_ctags_diff#difftastic#split_cmd(
+        \ get(g:, 'semantic_ctags_diff_flog_difftastic_split', 'botright'),
+        \ get(g:, 'semantic_ctags_diff_flog_difftastic_height', 20))
 endfunction
 
 " Show the difftastic diff for the commit under the cursor, restricted to the

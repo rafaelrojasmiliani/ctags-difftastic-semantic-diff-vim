@@ -217,17 +217,25 @@ function! semantic_ctags_diff#difftastic#commit_revs(repo, commit) abort
   return [a:commit . '^!']
 endfunction
 
-" Difftastic diff of a single {commit} restricted to a single {path}.
+" A 'botright 20new' style window command. {height} of 0 - or one that would
+" leave no room for the window above - lets Vim split evenly instead.
+function! semantic_ctags_diff#difftastic#split_cmd(split, height) abort
+  let l:h = a:height > 0 ? min([a:height, &lines - 6]) : 0
+  return a:split . ' ' . (l:h > 0 ? l:h : '') . 'new'
+endfunction
+
+" Difftastic diff over {revs} restricted to a single {path}.
 "
-" Used by the Flog <CR> mapping: the graph is already filtered to one file, so
-" the diff window must show that file only, never the rest of the commit.
+" Callers always scope to one file: the Flog <CR> graph is filtered to one
+" file, and the report's file list diffs one entry, so the window must never
+" show the rest of the change.
 "
 " {opts} keys:
 "   open_cmd  window command when no difftastic window exists (default 'botright new')
 "   title     buffer name on creation (default 'difftastic://<path>')
-"   subject   commit subject shown in the header
+"   label     extra header line, e.g. "Commit:  abc1234567  subject"
 "   focus     1 to leave the cursor in the diff window (default 0)
-function! semantic_ctags_diff#difftastic#commit_file(commit, path, repo, ...) abort
+function! semantic_ctags_diff#difftastic#revs_file(revs, path, repo, ...) abort
   if !semantic_ctags_diff#difftastic#available()
     echoerr 'semantic_ctags_diff: difftastic (' . g:semantic_ctags_diff_difft
           \ . ') not found in PATH. Install difftastic or set g:semantic_ctags_diff_difft'
@@ -235,11 +243,9 @@ function! semantic_ctags_diff#difftastic#commit_file(commit, path, repo, ...) ab
   endif
 
   let l:opts = a:0 ? a:1 : {}
-  let l:open_cmd = get(l:opts, 'open_cmd', 'botright new')
-  let l:revs = semantic_ctags_diff#difftastic#commit_revs(a:repo, a:commit)
-  let l:cmd = semantic_ctags_diff#difftastic#command(l:revs, a:path, a:repo)
+  let l:cmd = semantic_ctags_diff#difftastic#command(a:revs, a:path, a:repo)
 
-  call semantic_ctags_diff#_dbg('difftastic commit_file: ' . l:cmd)
+  call semantic_ctags_diff#_dbg('difftastic: ' . l:cmd)
   let [l:lines, l:exit, l:errs] = s:run(l:cmd)
 
   if l:exit != 0 && empty(l:lines)
@@ -247,28 +253,38 @@ function! semantic_ctags_diff#difftastic#commit_file(commit, path, repo, ...) ab
     return 0
   endif
 
-  let l:short = strpart(a:commit, 0, 10)
-  let l:header = [
-        \ 'Difftastic — ' . a:path,
-        \ 'Commit:  ' . l:short . (empty(get(l:opts, 'subject', '')) ? '' : '  ' . l:opts.subject),
-        \ 'Range:   ' . join(l:revs, ' '),
-        \ 'Command: ' . l:cmd,
-        \ '',
-        \ ]
+  let l:header = ['Difftastic — ' . a:path]
+  if !empty(get(l:opts, 'label', ''))
+    call add(l:header, l:opts.label)
+  endif
+  call add(l:header, 'Range:   ' . join(a:revs, ' '))
+  call add(l:header, 'Command: ' . l:cmd)
+  call add(l:header, '')
 
   let [l:body, l:groups] = semantic_ctags_diff#difftastic#strip_ansi(l:lines, len(l:header))
   if empty(filter(copy(l:body), '!empty(trim(v:val))'))
-    let l:body = [a:path . ' is unchanged in ' . l:short . '.']
+    let l:body = [a:path . ' is unchanged in ' . join(a:revs, ' ') . '.']
     let l:groups = {}
   endif
 
   let l:origin = win_getid()
   call s:open_or_reuse(get(l:opts, 'title', 'difftastic://' . a:path),
-        \ l:header + l:body, l:groups, l:open_cmd)
+        \ l:header + l:body, l:groups, get(l:opts, 'open_cmd', 'botright new'))
   if !get(l:opts, 'focus', 0)
     call win_gotoid(l:origin)
   endif
   return 1
+endfunction
+
+" Difftastic diff of a single {commit}, restricted to {path}. Bound to <CR> in
+" :FlogFile graphs. Takes the same {opts} as revs_file, plus 'subject'.
+function! semantic_ctags_diff#difftastic#commit_file(commit, path, repo, ...) abort
+  let l:opts = a:0 ? copy(a:1) : {}
+  let l:opts.label = 'Commit:  ' . strpart(a:commit, 0, 10)
+        \ . (empty(get(l:opts, 'subject', '')) ? '' : '  ' . l:opts.subject)
+  return semantic_ctags_diff#difftastic#revs_file(
+        \ semantic_ctags_diff#difftastic#commit_revs(a:repo, a:commit),
+        \ a:path, a:repo, l:opts)
 endfunction
 
 function! semantic_ctags_diff#difftastic#diff(open_cmd, ref) abort

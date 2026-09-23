@@ -19,6 +19,13 @@ let s:report = [
       \ 'Head: HEAD',
       \ 'Command: ...',
       \ '',
+      \ 'Changed files',
+      \ '=============',
+      \ '',
+      \ '  A src/new.cpp',
+      \ '  M src/robot.cpp',
+      \ '  D src/old.cpp',
+      \ '',
       \ 'Added symbols',
       \ '=============',
       \ '',
@@ -37,17 +44,9 @@ let s:report = [
       \ 'Modified symbols',
       \ '----------------',
       \ '',
-      \ 'src/robot.cpp',
+      \ 'Functions:',
+      \ '  ~ RobotController::configure',
       \ '',
-      \ '  ~ function RobotController::configure',
-      \ '',
-      \ 'File-scope changes',
-      \ '------------------',
-      \ '',
-      \ 'src/misc.cpp',
-      \ '',
-      \ '* added lines: 5, 6, 7',
-      \ '* deleted lines: 9',
       \ ]
 
 let s:json = {'files': [
@@ -96,18 +95,20 @@ call assert_equal(40, get(s:t, 'line', -1))
 call assert_equal('removed', get(s:t, 'classification', ''))
 call assert_equal(40, get(s:t, 'old_line', -1))
 
-" Modified symbol: the kind prefix is stripped, and the new-revision line wins.
-let s:t = s:target_at('\~ function RobotController::configure')
+" Modified symbol: no file heading any more, so the path comes from the JSON,
+" and the new-revision line wins.
+let s:t = s:target_at('\~ RobotController::configure')
 call assert_equal('src/robot.cpp', get(s:t, 'path', ''))
 call assert_equal(12, get(s:t, 'line', -1))
 call assert_equal('modified', get(s:t, 'classification', ''))
 call assert_equal(10, get(s:t, 'old_line', -1))
 call assert_equal(12, get(s:t, 'new_line', -1))
 
-" File-scope entries still parse straight out of the report.
+" "Changed files" entries carry git's status letter, parsed from the line.
 call assert_equal(
-      \ {'path': 'src/misc.cpp', 'line': 5, 'classification': 'file_scope'},
-      \ s:target_at('^\* added lines:'))
+      \ {'path': 'src/robot.cpp', 'line': 1, 'status': 'M', 'classification': 'file'},
+      \ s:target_at('^  M src/robot.cpp'))
+call assert_equal('D', get(s:target_at('^  D src/old.cpp'), 'status', ''))
 
 " Cursor in the header (no section) -> no target.
 call assert_equal({}, s:target_at('^Repo: '))

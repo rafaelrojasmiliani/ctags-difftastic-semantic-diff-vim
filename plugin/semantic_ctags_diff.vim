@@ -23,6 +23,11 @@ let g:semantic_ctags_diff_extra_args = get(g:, 'semantic_ctags_diff_extra_args',
 let g:semantic_ctags_diff_cache = get(g:, 'semantic_ctags_diff_cache', 1)
 let g:semantic_ctags_diff_cache_dir = get(g:, 'semantic_ctags_diff_cache_dir', '/tmp/semantic_ctags_diff')
 
+" <CR> on a "Changed files" entry: the difftastic split placed under the file.
+let g:semantic_ctags_diff_file_difftastic_split = get(g:, 'semantic_ctags_diff_file_difftastic_split', 'botright')
+let g:semantic_ctags_diff_file_difftastic_height = get(g:, 'semantic_ctags_diff_file_difftastic_height', 20)
+let g:semantic_ctags_diff_file_difftastic_focus = get(g:, 'semantic_ctags_diff_file_difftastic_focus', 0)
+
 command! -nargs=* -complete=customlist,semantic_ctags_diff#complete SemanticCtagsDiff
       \ call semantic_ctags_diff#cmd_diff(<q-args>)
 command! -nargs=* -complete=customlist,semantic_ctags_diff#complete SemanticCtagsDiffJson

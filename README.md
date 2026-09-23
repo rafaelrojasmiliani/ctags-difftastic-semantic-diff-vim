@@ -313,17 +313,30 @@ open it:
 
 | Key | Action |
 |-----|--------|
-| `<CR>` | **Fugitive vertical diff in a new tab**, cursor on the changed line |
+| `<CR>` | Depends on the section — see below |
 | `gd` | Open the source in the current window |
 | `o` | Open the source in a horizontal split |
 | `gO` | Open the source in a vertical split |
 | `O` | Open the source in a new tab |
 
-`<CR>` opens `base:<path>` and `head:<path>` side by side (`:Gtabedit` plus
-`leftabove :Gvdiffsplit`, so the older revision is on the left) and jumps to the
-line. For a **removed** symbol the cursor lands in the *base* pane, because that
-is the only revision still containing it; everything else lands in *head*. A
-file that exists in just one revision still opens, undiffed.
+`<CR>` does whatever is most useful for the section it is pressed in:
+
+| Section | `<CR>` opens |
+|---------|--------------|
+| **Changed files** | The file in a **new tab**, with a [difftastic](#difftastic-in-vim) diff of the whole `base..head` change **split below** it. A file git reports as deleted (`D`) does nothing — there is nothing left to open. |
+| **Added symbols** | Jumps straight to the symbol. It exists in the working tree, so there is nothing to compare. |
+| **Removed / Modified** | A **fugitive vertical diff in a new tab**, cursor on the changed line. |
+
+The vertical diff shows `base:<path>` and `head:<path>` side by side, older
+revision on the left. For a **removed** symbol the cursor lands in the *base*
+pane, because that is the only revision still containing it; modified symbols
+land in *head*. A file that exists in just one revision still opens, undiffed.
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `g:semantic_ctags_diff_file_difftastic_height` | `20` | Height of the difftastic split |
+| `g:semantic_ctags_diff_file_difftastic_split` | `'botright'` | Or `'belowright'` |
+| `g:semantic_ctags_diff_file_difftastic_focus` | `0` | `1` jumps into the diff window |
 
 Because the report prints no file or line numbers, every jump resolves its
 target from the cached JSON by qualified name. That JSON is fetched
@@ -340,6 +353,21 @@ report filters and deduplicates (the JSON keeps everything):
 | Local variables and free/namespace-scope variables | Too granular to be a reviewable API change |
 | Anything under an anonymous namespace (`__anon37a8102f0111`) | The name is generated and differs between the two revisions |
 | Repeats of the same `(kind, name)` | A namespace reopened in twenty files is one fact, not twenty |
+| File-scope line changes | Line numbers without a symbol are not reviewable; the file list covers "what changed where" |
+| Per-file headings in Modified | The same namespace is modified in many files; the name is the fact |
+
+The report instead opens with **Changed files**, a `git --name-status` style
+list covering every file git reports — including ones no symbols came out of,
+such as binaries or extensions outside `--include`:
+
+```
+Changed files
+=============
+
+  A Test/General/ControlStreamUtils.cpp
+  M Source/Control/RuckigMotionGenerators.cpp
+  D Source/Control/OldGenerator.cpp
+```
 
 **Class members are kept.** ctags' kind `m` means "class, struct, and union
 members" — a *data field*, not a method — so fields now appear under `Members:`

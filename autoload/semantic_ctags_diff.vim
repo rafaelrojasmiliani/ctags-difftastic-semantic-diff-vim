@@ -1072,30 +1072,8 @@ function! s:section_for_line(lnum) abort
       return 'removed'
     elseif l:t ==# 'Modified symbols'
       return 'modified'
-    elseif l:t ==# 'File-scope changes'
-      return 'file_scope'
-    endif
-    let l:l -= 1
-  endwhile
-  return ''
-endfunction
-
-" First integer in a "range: 10-34" / "new range: 10-34" / "added lines: 1, 2".
-function! s:first_int(text) abort
-  let l:m = matchstr(a:text, '\d\+')
-  return empty(l:m) ? 1 : str2nr(l:m)
-endfunction
-
-" Nearest bare file-path header above lnum (a non-blank line that is not a
-" symbol marker, indented field, or section underline).
-function! s:file_header_above(lnum) abort
-  let l:l = a:lnum
-  while l:l >= 1
-    let l:t = getline(l:l)
-    if l:t =~# '^\S' && l:t !~# '^\*' && l:t !~# '^[-=]\+$'
-          \ && l:t !~# '^\%(Added\|Removed\|Modified\|File-scope\) '
-          \ && index(['Added symbols', 'Removed symbols', 'Modified symbols', 'File-scope changes'], l:t) < 0
-      return l:t
+    elseif l:t ==# 'Changed files'
+      return 'files'
     endif
     let l:l -= 1
   endwhile
@@ -1170,13 +1148,12 @@ function! semantic_ctags_diff#_seed_state(base, head, repo, json) abort
   let s:last_json = a:json
 endfunction
 
-" Qualified name on the nearest report bullet at or above {lnum}.
-" Bullets are "  + name" (added), "  - name" (removed) and "  ~ kind name"
-" (modified); only the modified form carries a kind, stripped when asked.
-function! s:bullet_above(lnum, marker, strip_kind) abort
+" Qualified name on the nearest report bullet at or above {lnum}. Bullets are
+" "  + name" (added), "  - name" (removed) and "  ~ name" (modified).
+function! s:bullet_above(lnum, marker) abort
   let l:l = a:lnum
   while l:l >= 1 && getline(l:l) !~# '^\s*' . a:marker . ' '
-    if getline(l:l) =~# '^\%(Added\|Removed\|Modified\|File-scope\)'
+    if getline(l:l) =~# '^\%(Added\|Removed\|Modified\|Changed\)'
       return ''
     endif
     let l:l -= 1
@@ -1184,8 +1161,7 @@ function! s:bullet_above(lnum, marker, strip_kind) abort
   if l:l < 1
     return ''
   endif
-  let l:text = matchstr(getline(l:l), '^\s*' . a:marker . ' \zs.*$')
-  return a:strip_kind ? substitute(l:text, '^\w\+\s\+', '', '') : l:text
+  return matchstr(getline(l:l), '^\s*' . a:marker . ' \zs.*$')
 endfunction
 
 " Resolve {path, line, classification} for the symbol under the cursor, or {}.
@@ -1195,37 +1171,21 @@ function! semantic_ctags_diff#_target_at_cursor() abort
     return {}
   endif
 
-  " Added and removed symbols are grouped by kind with no path in the Markdown;
-  " modified ones sit under a file heading. All three print the name only, so
-  " path and line come from the cached JSON.
-  if l:section ==# 'added' || l:section ==# 'removed'
-    let l:marker = l:section ==# 'added' ? '+' : '-'
-    let l:qname = s:bullet_above(line('.'), l:marker, 0)
-    return empty(l:qname) ? {} : s:lookup_symbol(l:section, l:qname, '')
-  endif
-
-  if l:section ==# 'modified'
-    let l:qname = s:bullet_above(line('.'), '\~', 1)
-    if empty(l:qname)
+  " "Changed files" lists "<status> <path>"; the status letter is git's, so D
+  " marks a file that no longer exists in head.
+  if l:section ==# 'files'
+    let l:m = matchlist(getline('.'), '^\s\+\(\a\)\s\+\(.\+\)$')
+    if empty(l:m)
       return {}
     endif
-    return s:lookup_symbol('modified', l:qname, s:file_header_above(line('.')))
+    return {'path': l:m[2], 'line': 1, 'status': l:m[1], 'classification': 'file'}
   endif
 
-  if l:section ==# 'file_scope'
-    let l:path = s:file_header_above(line('.'))
-    if empty(l:path)
-      return {}
-    endif
-    let l:line = 1
-    let l:added = search('^\* added lines:', 'bcnW')
-    if l:added > 0 && s:file_header_above(l:added) ==# l:path
-      let l:line = s:first_int(getline(l:added))
-    endif
-    return {'path': l:path, 'line': l:line, 'classification': 'file_scope'}
-  endif
-
-  return {}
+  " Every symbol section is grouped by kind and prints the name alone, so path
+  " and line always come from the cached JSON.
+  let l:markers = {'added': '+', 'removed': '-', 'modified': '\~'}
+  let l:qname = s:bullet_above(line('.'), l:markers[l:section])
+  return empty(l:qname) ? {} : s:lookup_symbol(l:section, l:qname, '')
 endfunction
 
 function! s:open_working(abs, line, mode) abort
@@ -1350,14 +1310,41 @@ function! semantic_ctags_diff#open_diff_under_cursor() abort
     echo 'semantic_ctags_diff: no symbol under cursor'
     return
   endif
+  if l:target.classification ==# 'file'
+    call s:open_file_difftastic(l:target.path, get(l:target, 'status', 'M'))
+    return
+  endif
   " Added symbols are in the working tree, so <CR> jumps straight to them.
   " Only removed and modified symbols need the two-revision diff.
-  if index(['added', 'file_scope'], l:target.classification) >= 0
+  if l:target.classification ==# 'added'
     call semantic_ctags_diff#open_symbol_under_cursor('edit')
     return
   endif
   call s:open_vdiff_tab(
         \ l:target.path, l:target.line, l:target.classification !=# 'removed')
+endfunction
+
+" <CR> on a "Changed files" entry: the file as it stands now in a new tab, with
+" a difftastic diff of the whole base..head change split below it. A file git
+" reports as deleted has nothing to open, so nothing happens.
+function! s:open_file_difftastic(path, status) abort
+  let l:repo = s:repo()
+  let l:abs = simplify(l:repo . '/' . a:path)
+  if a:status ==# 'D' || !filereadable(l:abs)
+    call semantic_ctags_diff#_dbg(
+          \ 'changed files: not opening ' . a:path . ' (status ' . a:status . ')')
+    return
+  endif
+
+  execute 'tabedit ' . fnameescape(l:abs)
+  call semantic_ctags_diff#difftastic#revs_file(
+        \ [s:last_base, s:last_head], a:path, l:repo, {
+        \ 'open_cmd': semantic_ctags_diff#difftastic#split_cmd(
+        \     get(g:, 'semantic_ctags_diff_file_difftastic_split', 'botright'),
+        \     get(g:, 'semantic_ctags_diff_file_difftastic_height', 20)),
+        \ 'title': 'difftastic://changed/' . tabpagenr() . '/' . a:path,
+        \ 'focus': get(g:, 'semantic_ctags_diff_file_difftastic_focus', 0),
+        \ })
 endfunction
 
 function! semantic_ctags_diff#open_symbol_under_cursor(mode) abort
