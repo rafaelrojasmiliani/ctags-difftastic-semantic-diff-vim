@@ -401,19 +401,41 @@ Not included in this plugin:
 MAPPINGS                                      *semantic-ctags-diff-mappings*
 
 Report buffer maps ~
-  Inside the :SemanticCtagsDiff Markdown report, buffer-local maps jump from a
-  symbol line to its source (mirroring vim-fugitive):
+  The :SemanticCtagsDiff Markdown report lists symbol names only. Buffer-local
+  maps show or open the symbol under the cursor:
 
-    <CR>   open the symbol in the current window
-    o      open in a horizontal split
-    gO     open in a vertical split
-    O      open in a new tab
+    <CR>   fugitive vertical diff in a new tab, on the changed line
+    gd     open the source in the current window
+    o      open the source in a horizontal split
+    gO     open the source in a vertical split
+    O      open the source in a new tab
 
-  Added / modified symbols open the working-tree file at the symbol line,
-  falling back to :Gedit <head>:<path> when the file is not in the current
-  checkout. Removed symbols open :Gedit <base>:<path> (the base commit where
-  the symbol still exists). Added symbols use the cached JSON for their path,
-  and the fugitive fallback requires vim-fugitive.
+  <CR> opens base:<path> and head:<path> side by side (:Gtabedit plus
+  leftabove :Gvdiffsplit, older revision on the left) and jumps to the line.
+  Removed symbols land in the base pane, since that is the only revision that
+  still contains them; everything else lands in head. A file present in only
+  one revision opens undiffed.
+
+  gd/o/gO/O open the plain source: the working-tree file for added and modified
+  symbols, :Gedit <base>:<path> for removed ones.
+
+  The report prints no paths or line numbers, so every jump resolves its target
+  from the cached JSON by qualified name; it is fetched on demand when only the
+  Markdown report was run. All jumps require vim-fugitive.
+
+Report contents ~
+  The Markdown report filters ctags noise (the JSON keeps everything):
+
+    - local variables and free / namespace-scope variables are dropped
+    - symbols under an anonymous namespace (__anon37a8102f0111) are dropped,
+      because the generated name differs between the two revisions
+    - repeats of the same kind + qualified name are collapsed, so a namespace
+      reopened in twenty files is listed once
+
+  Class members are kept and listed under "Members:". The ctags kind 'm' means
+  "class, struct, and union members" — a data field, not a method — so fields
+  are no longer reported as methods. A member whose container is a namespace
+  rather than a class is treated as a plain variable and dropped.
 
 No global mappings are defined by default. Suggested mappings: >
 

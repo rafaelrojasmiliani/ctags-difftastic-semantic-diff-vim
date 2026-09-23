@@ -308,29 +308,43 @@ Notes:
 
 ## Jump to a symbol from the report
 
-In the `:SemanticCtagsDiff` (Markdown) report, press a key on any symbol line to
-open its source, mirroring vim-fugitive conventions:
+The report lists **symbol names only**. Press a key on any symbol line to see or
+open it:
 
-| Key | Opens the symbol in |
-|-----|---------------------|
-| `<CR>` | current window |
-| `o` | horizontal split |
-| `gO` | vertical split |
-| `O` | new tab |
+| Key | Action |
+|-----|--------|
+| `<CR>` | **Fugitive vertical diff in a new tab**, cursor on the changed line |
+| `gd` | Open the source in the current window |
+| `o` | Open the source in a horizontal split |
+| `gO` | Open the source in a vertical split |
+| `O` | Open the source in a new tab |
 
-Where it opens depends on the change type:
+`<CR>` opens `base:<path>` and `head:<path>` side by side (`:Gtabedit` plus
+`leftabove :Gvdiffsplit`, so the older revision is on the left) and jumps to the
+line. For a **removed** symbol the cursor lands in the *base* pane, because that
+is the only revision still containing it; everything else lands in *head*. A
+file that exists in just one revision still opens, undiffed.
 
-- **Added / modified** symbols live in `head`, so the on-disk **working-tree**
-  file is opened at the symbol's line. If the current checkout does not contain
-  that file, it falls back to `:Gedit <head>:<path>` (fugitive) — the file as it
-  exists in the head commit.
-- **Removed** symbols no longer exist in the working tree, so they open with
-  `:Gedit <base>:<path>` — the file at the base commit where the symbol still
-  exists.
+Because the report prints no file or line numbers, every jump resolves its
+target from the cached JSON by qualified name. That JSON is fetched
+automatically — if you only ran the Markdown report, the first jump fetches it.
+All of this requires **vim-fugitive**.
 
-Added symbols resolve their path/line from the cached JSON, so run a diff first
-(the JSON is fetched automatically after `:SemanticCtagsDiff`). The fugitive
-fallback and removed-symbol view require **vim-fugitive**.
+### What the report leaves out
+
+`ctags` tags far more than is useful for reviewing a branch, so the Markdown
+report filters and deduplicates (the JSON keeps everything):
+
+| Dropped | Why |
+|---------|-----|
+| Local variables and free/namespace-scope variables | Too granular to be a reviewable API change |
+| Anything under an anonymous namespace (`__anon37a8102f0111`) | The name is generated and differs between the two revisions |
+| Repeats of the same `(kind, name)` | A namespace reopened in twenty files is one fact, not twenty |
+
+**Class members are kept.** ctags' kind `m` means "class, struct, and union
+members" — a *data field*, not a method — so fields now appear under `Members:`
+rather than being listed as methods. A member whose container is a namespace
+rather than a class is a plain variable and is dropped.
 
 > ponytail: added/modified jumps assume your checkout is at `head`. On a
 > different checkout the working file opens but the line may be slightly off;

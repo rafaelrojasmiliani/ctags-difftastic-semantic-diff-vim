@@ -521,7 +521,10 @@ endfunction
 " Buffer-local maps to jump from a symbol to its source, mirroring vim-fugitive
 " conventions (<CR> same window, o split, gO vsplit, O tab).
 function! semantic_ctags_diff#_setup_nav_maps() abort
-  nnoremap <buffer><silent> <CR> :call semantic_ctags_diff#open_symbol_under_cursor('edit')<CR>
+  " <CR> shows the change itself (fugitive vertical diff in a new tab); the
+  " other keys open the plain source, as before.
+  nnoremap <buffer><silent> <CR> :call semantic_ctags_diff#open_diff_under_cursor()<CR>
+  nnoremap <buffer><silent> gd   :call semantic_ctags_diff#open_symbol_under_cursor('edit')<CR>
   nnoremap <buffer><silent> o    :call semantic_ctags_diff#open_symbol_under_cursor('split')<CR>
   nnoremap <buffer><silent> gO   :call semantic_ctags_diff#open_symbol_under_cursor('vsplit')<CR>
   nnoremap <buffer><silent> O    :call semantic_ctags_diff#open_symbol_under_cursor('tab')<CR>
@@ -1082,24 +1085,90 @@ function! s:file_header_above(lnum) abort
   return ''
 endfunction
 
-" Look up an added symbol's path/line from the cached JSON by qualified name.
-function! s:lookup_added(qname) abort
-  if type(s:last_json) != v:t_dict || !has_key(s:last_json, 'files')
+" Make sure s:last_json holds the JSON for the last diff, fetching it if the
+" user only ran the Markdown report. The report prints symbol names alone, so
+" every jump depends on this.
+function! s:ensure_json() abort
+  if type(s:last_json) == v:t_dict && has_key(s:last_json, 'files')
+    return s:last_json
+  endif
+  if empty(s:last_base) || empty(s:last_head)
     return {}
   endif
-  for l:f in s:last_json.files
-    for l:s in get(l:f, 'added_symbols', [])
-      if get(l:s, 'qualified_name', get(l:s, 'name', '')) ==# a:qname
-        let l:rng = get(l:s, 'range', [get(l:s, 'line', 1)])
-        return {
-              \ 'path': get(l:s, 'path', get(l:f, 'path', '')),
-              \ 'line': empty(l:rng) ? 1 : l:rng[0],
-              \ 'classification': 'added',
-              \ }
+  let l:cache = semantic_ctags_diff#_json_cache_id_for(s:last_base, s:last_head, s:last_path)
+  call semantic_ctags_diff#_fetch_json_for_cache(
+        \ s:last_base, s:last_head, l:cache, 0, s:last_path)
+  return type(s:last_json) == v:t_dict ? s:last_json : {}
+endfunction
+
+" Look up a symbol's path and line in the cached JSON by qualified name.
+"
+" {section} is added/removed/modified; {path} narrows the search when the
+" report grouped the symbol under a file heading ('' searches every file).
+" Returns {} or a target dict carrying both revisions' line numbers, since a
+" removed symbol only has a line in base and an added one only in head.
+function! s:lookup_symbol(section, qname, path) abort
+  let l:json = s:ensure_json()
+  if empty(l:json)
+    return {}
+  endif
+
+  let l:fields = {'added': 'added_symbols', 'removed': 'removed_symbols',
+        \ 'modified': 'modified_symbols'}
+  let l:field = get(l:fields, a:section, '')
+  if empty(l:field)
+    return {}
+  endif
+
+  for l:f in get(l:json, 'files', [])
+    if !empty(a:path) && get(l:f, 'path', '') !=# a:path
+      continue
+    endif
+    for l:s in get(l:f, l:field, [])
+      if get(l:s, 'qualified_name', get(l:s, 'name', '')) !=# a:qname
+        continue
       endif
+      let l:new = get(l:s, 'new_range', get(l:s, 'range', []))
+      let l:old = get(l:s, 'old_range', get(l:s, 'range', []))
+      let l:new_line = empty(l:new) ? get(l:s, 'line', 1) : l:new[0]
+      let l:old_line = empty(l:old) ? l:new_line : l:old[0]
+      return {
+            \ 'path': get(l:s, 'file', get(l:f, 'path', '')),
+            \ 'line': a:section ==# 'removed' ? l:old_line : l:new_line,
+            \ 'old_line': l:old_line,
+            \ 'new_line': l:new_line,
+            \ 'classification': a:section,
+            \ }
     endfor
   endfor
   return {}
+endfunction
+
+" Seed the diff state without running the CLI. Used by the headless self-checks
+" and by callers that already hold a parsed result.
+function! semantic_ctags_diff#_seed_state(base, head, repo, json) abort
+  let s:last_base = a:base
+  let s:last_head = a:head
+  let s:last_repo = a:repo
+  let s:last_json = a:json
+endfunction
+
+" Qualified name on the nearest report bullet at or above {lnum}.
+" Bullets are "  + name" (added), "  - name" (removed) and "  ~ kind name"
+" (modified); only the modified form carries a kind, stripped when asked.
+function! s:bullet_above(lnum, marker, strip_kind) abort
+  let l:l = a:lnum
+  while l:l >= 1 && getline(l:l) !~# '^\s*' . a:marker . ' '
+    if getline(l:l) =~# '^\%(Added\|Removed\|Modified\|File-scope\)'
+      return ''
+    endif
+    let l:l -= 1
+  endwhile
+  if l:l < 1
+    return ''
+  endif
+  let l:text = matchstr(getline(l:l), '^\s*' . a:marker . ' \zs.*$')
+  return a:strip_kind ? substitute(l:text, '^\w\+\s\+', '', '') : l:text
 endfunction
 
 " Resolve {path, line, classification} for the symbol under the cursor, or {}.
@@ -1109,18 +1178,21 @@ function! semantic_ctags_diff#_target_at_cursor() abort
     return {}
   endif
 
-  if l:section ==# 'added'
-    " Added symbols are grouped by kind as "  + qualified_name" with no path
-    " in the Markdown, so resolve the path/line from the cached JSON.
-    let l:l = line('.')
-    while l:l >= 1 && getline(l:l) !~# '^\s*+ '
-      let l:l -= 1
-    endwhile
-    let l:qname = matchstr(getline(l:l), '^\s*+ \zs.*$')
+  " Added and removed symbols are grouped by kind with no path in the Markdown;
+  " modified ones sit under a file heading. All three print the name only, so
+  " path and line come from the cached JSON.
+  if l:section ==# 'added' || l:section ==# 'removed'
+    let l:marker = l:section ==# 'added' ? '+' : '-'
+    let l:qname = s:bullet_above(line('.'), l:marker, 0)
+    return empty(l:qname) ? {} : s:lookup_symbol(l:section, l:qname, '')
+  endif
+
+  if l:section ==# 'modified'
+    let l:qname = s:bullet_above(line('.'), '\~', 1)
     if empty(l:qname)
       return {}
     endif
-    return s:lookup_added(l:qname)
+    return s:lookup_symbol('modified', l:qname, s:file_header_above(line('.')))
   endif
 
   if l:section ==# 'file_scope'
@@ -1136,49 +1208,7 @@ function! semantic_ctags_diff#_target_at_cursor() abort
     return {'path': l:path, 'line': l:line, 'classification': 'file_scope'}
   endif
 
-  " removed / modified: find the enclosing "* kind name" block.
-  let l:start = line('.')
-  while l:start >= 1 && getline(l:start) !~# '^\* '
-    let l:start -= 1
-  endwhile
-  if l:start < 1 || getline(l:start) !~# '^\* '
-    return {}
-  endif
-
-  if l:section ==# 'removed'
-    let l:path = ''
-    let l:line = 1
-    let l:l = l:start + 1
-    while l:l <= line('$') && getline(l:l) =~# '^  '
-      let l:t = getline(l:l)
-      if l:t =~# '^  file: '
-        let l:path = matchstr(l:t, '^  file: \zs.*$')
-      elseif l:t =~# '^  range: '
-        let l:line = s:first_int(l:t)
-      endif
-      let l:l += 1
-    endwhile
-    if empty(l:path)
-      return {}
-    endif
-    return {'path': l:path, 'line': l:line, 'classification': 'removed'}
-  endif
-
-  " modified
-  let l:path = s:file_header_above(l:start)
-  if empty(l:path)
-    return {}
-  endif
-  let l:line = 1
-  let l:l = l:start + 1
-  while l:l <= line('$') && getline(l:l) =~# '^  '
-    if getline(l:l) =~# '^  new range: '
-      let l:line = s:first_int(getline(l:l))
-      break
-    endif
-    let l:l += 1
-  endwhile
-  return {'path': l:path, 'line': l:line, 'classification': 'modified'}
+  return {}
 endfunction
 
 function! s:open_working(abs, line, mode) abort
@@ -1199,6 +1229,83 @@ function! s:open_fugitive(rev, path, line, mode) abort
   execute get(l:cmds, a:mode, 'Gedit') . ' ' . fnameescape(l:obj)
   call cursor(a:line, 1)
   normal! zz
+endfunction
+
+" Focus the window in this tab showing {bufnr} (or the other one when
+" {want_buf} is 0), then put the cursor on {line}.
+function! s:focus_pane(bufnr, want_buf, line) abort
+  for l:w in range(1, winnr('$'))
+    let l:is_match = winbufnr(l:w) == a:bufnr
+    if l:is_match == a:want_buf
+      call win_gotoid(win_getid(l:w))
+      break
+    endif
+  endfor
+  call cursor(max([1, a:line]), 1)
+  normal! zz
+endfunction
+
+" Open base:path and head:path side by side as a fugitive diff in a new tab,
+" with the cursor on the changed line.
+"
+" {want_head} picks which revision to land in: a removed symbol only has a line
+" in base, everything else is located in head. A file present in just one
+" revision still opens, undiffed.
+function! s:open_vdiff_tab(path, line, want_head) abort
+  if empty(s:last_base) || empty(s:last_head)
+    echoerr 'semantic_ctags_diff: no base/head recorded; run a diff first'
+    return
+  endif
+  if exists(':Gtabedit') != 2 || exists(':Gvdiffsplit') != 2
+    echoerr 'semantic_ctags_diff: vim-fugitive is required for the diff view'
+    return
+  endif
+
+  let l:head_obj = s:last_head . ':' . a:path
+  let l:base_obj = s:last_base . ':' . a:path
+  let l:first = a:want_head ? l:head_obj : l:base_obj
+  let l:other = a:want_head ? l:base_obj : l:head_obj
+
+  call semantic_ctags_diff#_dbg('vdiff tab: ' . l:base_obj . ' | ' . l:head_obj)
+  try
+    execute 'Gtabedit ' . fnameescape(l:first)
+  catch /.*/
+    " The file does not exist in that revision (added or deleted outright).
+    try
+      execute 'Gtabedit ' . fnameescape(l:other)
+    catch /.*/
+      echoerr 'semantic_ctags_diff: cannot open ' . a:path . ' in ' . s:last_base . ' or ' . s:last_head
+      return
+    endtry
+    call cursor(max([1, a:line]), 1)
+    normal! zz
+    return
+  endtry
+
+  let l:first_buf = bufnr('%')
+  " leftabove keeps the older revision on the left, as :Gdiffsplit does.
+  try
+    execute 'leftabove Gvdiffsplit ' . fnameescape(l:other)
+  catch /.*/
+    call semantic_ctags_diff#_dbg('vdiffsplit failed for ' . l:other . ': ' . v:exception)
+    call cursor(max([1, a:line]), 1)
+    normal! zz
+    return
+  endtry
+
+  " The line we want is in the revision opened first.
+  call s:focus_pane(l:first_buf, 1, a:line)
+endfunction
+
+" <CR> in the report: show the symbol under the cursor as a fugitive diff.
+function! semantic_ctags_diff#open_diff_under_cursor() abort
+  let l:target = semantic_ctags_diff#_target_at_cursor()
+  if empty(l:target)
+    echo 'semantic_ctags_diff: no symbol under cursor'
+    return
+  endif
+  call s:open_vdiff_tab(
+        \ l:target.path, l:target.line, l:target.classification !=# 'removed')
 endfunction
 
 function! semantic_ctags_diff#open_symbol_under_cursor(mode) abort
