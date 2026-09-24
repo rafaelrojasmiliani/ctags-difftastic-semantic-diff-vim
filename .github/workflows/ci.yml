@@ -11,7 +11,8 @@
 #   S02 — Install git, universal-ctags, and vim (runtime deps).
 #   S03 — pytest in submodules/semantic-ctags-diff (library unit tests).
 #   S04 — Install vim-fugitive, required by the diff-view checks.
-#   S05 — Headless Vim scripts: cache, navigation parsing, submodule support.
+#   S05 — Headless Vim scripts: cache, navigation parsing, submodule support,
+#         branch merge comparison.
 # =============================================================================
 
 name: CI
@@ -77,3 +78,4 @@ jobs:
           vim -N -u NONE -es -S test/flog_difftastic.vim
           vim -N -u NONE -es -S test/complete.vim
           vim -N -u NONE -es -S test/submodule_diff.vim
+          vim -N -u NONE -es -S test/merge_compare.vim

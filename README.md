@@ -215,6 +215,7 @@ is recomputed automatically. Same commit pair → instant reload.
 | `:SemanticCtagsDiffCopyCommand` | Copy shell command to `+` register |
 | `:SemanticCtagsDiffDebugLog` | Open debug log |
 | `:SemanticCtagsDiffClearDebugLog` | Clear debug log |
+| `:CompareBranchesForMerge [a] b` | Two first-parent histories side by side; `<CR>` = semantic diff of merging that commit into the other branch |
 | `:SemanticCtagsDiffFlog` | Flog companion (if flog installed) |
 | `:SemanticCtagsDiffFlogSymbol` | Pick symbol → Flog history in a new tab (if flog installed) |
 | `:FlogSymbol` / `:FlogFunction` / `:FlogClass` / `:FlogNamespace` | Cursor symbol history in a **new tab** |
@@ -323,14 +324,22 @@ open it:
 
 | Section | `<CR>` opens |
 |---------|--------------|
-| **Changed files** | The file in a **new tab**, with a [difftastic](#difftastic-in-vim) diff of the whole `base..head` change **split below** it. A file git reports as deleted (`D`) does nothing — there is nothing left to open. |
-| **Added symbols** | Jumps straight to the symbol. It exists in the working tree, so there is nothing to compare. |
-| **Removed / Modified** | A **fugitive vertical diff in a new tab**, cursor on the changed line. |
+| **Changed files** | The file at `head` in a **new tab**, with a [difftastic](#difftastic-in-vim) diff of the whole `base..head` change **split below** it. A file git reports as deleted (`D`) does nothing — there is nothing left to open. |
+| **Added symbols** | Jumps straight to the symbol. It is present at `head`, so there is nothing to compare. |
+| **Removed / Modified** | A **fugitive vertical diff in a new tab**, cursor on the changed line, with a difftastic diff **split below** it. |
 
 The vertical diff shows `base:<path>` and `head:<path>` side by side, older
-revision on the left. For a **removed** symbol the cursor lands in the *base*
-pane, because that is the only revision still containing it; modified symbols
-land in *head*. A file that exists in just one revision still opens, undiffed.
+revision on the left, and difftastic below: the vertical diff shows which lines
+moved, difftastic shows what changed inside them. For a **removed** symbol the
+cursor lands in the *base* pane, because that is the only revision still
+containing it; modified symbols land in *head*. A file that exists in just one
+revision still opens, undiffed.
+
+`gd`/`o`/`gO`/`O` open the working-tree file — but only while `head` is the
+checked-out commit. When it is not, as in
+[`:CompareBranchesForMerge`](#comparing-two-branches-for-a-merge), `<head>:<path>`
+is opened through fugitive instead, since the report's line numbers belong to
+that commit rather than to the tree on disk.
 
 | Setting | Default | Meaning |
 |---------|---------|---------|
@@ -374,9 +383,60 @@ members" — a *data field*, not a method — so fields now appear under `Member
 rather than being listed as methods. A member whose container is a namespace
 rather than a class is a plain variable and is dropped.
 
-> ponytail: added/modified jumps assume your checkout is at `head`. On a
-> different checkout the working file opens but the line may be slightly off;
-> use `:Gedit <head>:<path>` for the exact head version.
+## Comparing two branches for a merge
+
+Two long-lived branches that each break the other are hard to reconcile in one
+step. `:CompareBranchesForMerge` lets you walk them commit by commit and ask, at
+each point, what merging *that far* would actually bring.
+
+```vim
+:CompareBranchesForMerge devel          " current branch vs devel
+:CompareBranchesForMerge master devel
+```
+
+It opens a new tab split vertically, branch A on the left and branch B on the
+right. Each pane lists that branch's `git log --first-parent` back to the merge
+base, so only the commits that genuinely diverge are shown, and names the merge
+base in its footer:
+
+```
+A  master  —  3 commit(s) since the fork
+<CR>: semantic diff of merging that commit into devel
+
+e646658 2026-09-24 rafael           master: hotfix configure
+1c9a02b 2026-09-18 rafael           master: bump version
+...
+merge base  eb02c7a 2026-08-01 rafael           shared base
+```
+
+Pressing `<CR>` on a commit opens a full-width report **below both panes** with
+the semantic diff for it. The direction depends on which pane you are in, which
+is what each pane's second line states:
+
+| Cursor in | `<CR>` reports |
+|-----------|----------------|
+| left pane | merging that commit of **A** into the tip of **B** |
+| right pane | merging that commit of **B** into the tip of **A** |
+
+So the base is always the *opposite* branch's tip and the head is the commit
+under the cursor. The report answers "what would this bring", not "what has this
+branch done": added symbols are what the merge introduces, removed and modified
+symbols are what it disturbs on the other side. From there the usual report keys
+apply — `<CR>` on a symbol opens the vertical diff with difftastic below it.
+
+The cursor stays in the history pane so you can keep browsing; `<C-w>j` moves
+into the report. Every commit you visit is cached by sha, so walking back over
+the same ones is free.
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `g:semantic_ctags_diff_merge_report_height` | `20` | Height of the report split; `0` splits evenly |
+| `g:semantic_ctags_diff_merge_report_split` | `'botright'` | `'belowright'` keeps it under one pane |
+
+The history is rendered from `git log` rather than by Flog: with
+`--first-parent` the history is a straight line, so Flog's graph column would be
+one `*` per row, and owning the buffer keeps `<CR>` ours instead of Flog's commit
+view. **Flog is not required for this command.**
 
 ## Vim / Fugitive / Flog integration
 

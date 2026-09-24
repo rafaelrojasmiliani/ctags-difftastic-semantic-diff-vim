@@ -28,6 +28,10 @@ let g:semantic_ctags_diff_file_difftastic_split = get(g:, 'semantic_ctags_diff_f
 let g:semantic_ctags_diff_file_difftastic_height = get(g:, 'semantic_ctags_diff_file_difftastic_height', 20)
 let g:semantic_ctags_diff_file_difftastic_focus = get(g:, 'semantic_ctags_diff_file_difftastic_focus', 0)
 
+" :CompareBranchesForMerge — the report split under the two history panes.
+let g:semantic_ctags_diff_merge_report_split = get(g:, 'semantic_ctags_diff_merge_report_split', 'botright')
+let g:semantic_ctags_diff_merge_report_height = get(g:, 'semantic_ctags_diff_merge_report_height', 20)
+
 command! -nargs=* -complete=customlist,semantic_ctags_diff#complete SemanticCtagsDiff
       \ call semantic_ctags_diff#cmd_diff(<q-args>)
 command! -nargs=* -complete=customlist,semantic_ctags_diff#complete SemanticCtagsDiffJson
@@ -52,6 +56,11 @@ command! -nargs=0 SemanticCtagsDiffClearCache
       \ call semantic_ctags_diff#clear_cache()
 command! -nargs=0 SemanticCtagsDiffClearDebugLog
       \ call semantic_ctags_diff#clear_debug_log()
+
+" Two first-parent histories side by side; <CR> on a commit shows the semantic
+" diff of merging it into the opposite branch's tip.
+command! -nargs=+ -complete=customlist,semantic_ctags_diff#complete CompareBranchesForMerge
+      \ call semantic_ctags_diff#merge#compare(<q-args>)
 
 if exists(':Flog') == 2
   command! -nargs=* -complete=customlist,semantic_ctags_diff#complete SemanticCtagsDiffFlog

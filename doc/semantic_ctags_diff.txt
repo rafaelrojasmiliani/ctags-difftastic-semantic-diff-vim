@@ -7,6 +7,7 @@ Introduction                                    |semantic-ctags-diff-intro|
 Requirements                                    |semantic-ctags-diff-requirements|
 Installation                                    |semantic-ctags-diff-install|
 Commands                                        |semantic-ctags-diff-commands|
+Branch merge comparison                         |semantic-ctags-diff-merge|
 Difftastic                                      |semantic-ctags-diff-difftastic|
 Configuration                                   |semantic-ctags-diff-config|
 Submodules                                      |semantic-ctags-diff-submodules|
@@ -142,6 +143,12 @@ COMMANDS                                        *semantic-ctags-diff-commands*
 :SemanticCtagsDiffClearDebugLog                   *:SemanticCtagsDiffClearDebugLog*
       Clear the in-memory debug log.
 
+:CompareBranchesForMerge [branch-a] {branch-b}    *:CompareBranchesForMerge*
+      Two first-parent histories side by side, and the semantic diff of
+      merging a chosen commit into the opposite branch's tip. With one
+      argument, branch-a is the current branch. See
+      |semantic-ctags-diff-merge|.
+
 TAB COMPLETION                                  *semantic-ctags-diff-completion*
       :SemanticCtagsDiff and :SemanticCtagsDiffJson complete Git refs on the
       first two arguments. With vim-fugitive, fugitive#CompleteObject is used.
@@ -191,6 +198,46 @@ TAB COMPLETION                                  *semantic-ctags-diff-completion*
 
 :Gvdifftastic [ref]                               *:Gvdifftastic*
       Same as :Gdifftastic, in a vertical split.
+
+==============================================================================
+BRANCH MERGE COMPARISON                              *semantic-ctags-diff-merge*
+
+Two long-lived branches that each break the other are hard to reconcile in one
+step. :CompareBranchesForMerge lets you walk them commit by commit and ask, at
+each point, what merging that far would actually bring.
+>
+    :CompareBranchesForMerge devel          " current branch vs devel
+    :CompareBranchesForMerge master devel
+<
+It opens a new tab with a vertical split: branch A on the left, branch B on the
+right. Each pane lists that branch's `git log --first-parent` back to the merge
+base, so only the commits that actually diverge are shown, and names the merge
+base in its footer. Both refs complete like |:SemanticCtagsDiff| arguments.
+
+Pressing <CR> on a commit opens a full-width split below both panes with the
+|:SemanticCtagsDiff| report for that commit. The direction depends on the pane
+the cursor is in, which is what each pane's second line states:
+
+    left pane      merge this commit of A into the tip of B
+    right pane     merge this commit of B into the tip of A
+
+So the base is always the opposite branch's tip and the head is the commit
+under the cursor. The report answers "what would this bring", not "what has
+this branch done": added symbols are what the merge introduces, removed and
+modified symbols are what it disturbs on the other side.
+
+The cursor stays in the history pane so you can keep browsing; <C-w>j moves
+into the report, where all the usual maps apply (see
+|semantic-ctags-diff-mappings|). Every commit you visit is cached by sha
+(|g:semantic_ctags_diff_cache|), so walking back over the same ones is free.
+
+The report's head is an arbitrary commit here, not the checked-out one, so
+jumps open <head>:<path> through fugitive rather than the working-tree file.
+
+The history is rendered from `git log` rather than by vim-flog: with
+--first-parent the history is a straight line, so flog's graph column would be
+one '*' per row, and owning the buffer keeps <CR> ours instead of flog's commit
+view. vim-flog is therefore not required for this command.
 
 ==============================================================================
 DIFFTASTIC                                      *semantic-ctags-diff-difftastic*
@@ -299,8 +346,8 @@ g:semantic_ctags_diff_flog_difftastic_focus       *g:semantic_ctags_diff_flog_di
       can keep pressing <CR> on other commits. Default: 0
 
 g:semantic_ctags_diff_file_difftastic_height      *g:semantic_ctags_diff_file_difftastic_height*
-      Height, in lines, of the difftastic split opened by <CR> on a "Changed
-      files" entry. Default: 20
+      Height, in lines, of the difftastic split that <CR> in the report opens
+      under a "Changed files" entry or under a vertical diff. Default: 20
 
 g:semantic_ctags_diff_file_difftastic_split       *g:semantic_ctags_diff_file_difftastic_split*
       Split modifier for that window: 'botright' or 'belowright'.
@@ -309,6 +356,15 @@ g:semantic_ctags_diff_file_difftastic_split       *g:semantic_ctags_diff_file_di
 g:semantic_ctags_diff_file_difftastic_focus       *g:semantic_ctags_diff_file_difftastic_focus*
       1 moves the cursor into the diff window, 0 leaves it in the file.
       Default: 0
+
+g:semantic_ctags_diff_merge_report_height         *g:semantic_ctags_diff_merge_report_height*
+      Height, in lines, of the report split under the two history panes of
+      |:CompareBranchesForMerge|. 0 splits evenly. Default: 20
+
+g:semantic_ctags_diff_merge_report_split          *g:semantic_ctags_diff_merge_report_split*
+      Split modifier for that window: 'botright' spans the full width under
+      both panes, 'belowright' stays under the current pane.
+      Default: 'botright'
 
 g:semantic_ctags_diff_difft                       *g:semantic_ctags_diff_difft*
       difftastic executable for :Gdifftastic. Default: 'difft'
@@ -460,21 +516,30 @@ Report buffer maps ~
 
   <CR> does whatever is most useful for the section it is pressed in:
 
-    Changed files      open the file in a new tab, with a |difftastic| diff of
-                       the whole base..head change split below it. Files git
-                       reports as deleted (D) do nothing, since there is
-                       nothing left to open.
-    Added symbols      jump straight to the symbol; it exists in the working
-                       tree, so there is nothing to compare.
+    Changed files      open the file at head in a new tab, with a |difftastic|
+                       diff of the whole base..head change split below it.
+                       Files git reports as deleted (D) do nothing, since
+                       there is nothing left to open.
+    Added symbols      jump straight to the symbol; it is present at head, so
+                       there is nothing to compare.
     Removed, Modified  a fugitive vertical diff in a new tab, on the changed
                        line: base:<path> and head:<path> side by side, older
-                       revision on the left. Removed symbols land in the base
-                       pane, since that is the only revision still containing
-                       them; modified ones land in head. A file present in
-                       only one revision opens undiffed.
+                       revision on the left, and a |difftastic| diff of the
+                       same change split below them. The vertical diff shows
+                       which lines moved, difftastic shows what changed inside
+                       them. Removed symbols land in the base pane, since that
+                       is the only revision still containing them; modified
+                       ones land in head. A file present in only one revision
+                       opens undiffed.
 
   gd/o/gO/O open the plain source: the working-tree file for added and modified
   symbols, <base>:<path> via fugitive for removed ones.
+
+  "The working-tree file" only applies while head is the checked-out commit.
+  When it is not - as in |:CompareBranchesForMerge|, whose head is whichever
+  commit the cursor is on - <head>:<path> is opened through fugitive instead,
+  because the report's line numbers belong to that commit and not to the tree
+  on disk.
 
   The report prints no paths or line numbers, so every jump resolves its target
   from the cached JSON by qualified name; it is fetched on demand when only the

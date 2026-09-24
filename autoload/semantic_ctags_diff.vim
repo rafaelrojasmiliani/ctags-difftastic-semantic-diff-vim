@@ -1224,6 +1224,18 @@ function! s:fugitive_object(rev, path) abort
   return FugitiveFind(a:rev . ':' . a:path, l:dir)
 endfunction
 
+" True when s:last_head is the checked-out commit, i.e. the working-tree file is
+" the revision the report's line numbers were computed against. It is not for
+" :CompareBranchesForMerge, whose head is whichever commit the cursor is on.
+function! s:head_is_worktree() abort
+  let l:repo = s:repo()
+  if empty(l:repo) || empty(s:last_head)
+    return 0
+  endif
+  let l:refs = semantic_ctags_diff#_resolve_refs(l:repo, s:last_head, 'HEAD')
+  return !empty(l:refs[0]) && l:refs[0] ==# l:refs[1]
+endfunction
+
 function! s:rev_has_path(rev, path) abort
   let l:repo = s:repo()
   if empty(l:repo)
@@ -1286,21 +1298,37 @@ function! s:open_vdiff_tab(path, line, want_head) abort
   endif
 
   execute 'tabedit ' . fnameescape(s:fugitive_object(l:present[0], a:path))
-  if len(l:present) == 1
-    call cursor(max([1, a:line]), 1)
-    normal! zz
-    return
+  let l:landed = win_getid()
+
+  if len(l:present) > 1
+    diffthis
+    " Keep the older revision on the left whichever side we landed in.
+    execute (l:present[1] ==# s:last_base ? 'leftabove' : 'rightbelow')
+          \ . ' vsplit ' . fnameescape(s:fugitive_object(l:present[1], a:path))
+    diffthis
+    call win_gotoid(l:landed)
   endif
 
-  let l:landed = win_getid()
-  diffthis
-  " Keep the older revision on the left whichever side we landed in.
-  execute (l:present[1] ==# s:last_base ? 'leftabove' : 'rightbelow')
-        \ . ' vsplit ' . fnameescape(s:fugitive_object(l:present[1], a:path))
-  diffthis
-  call win_gotoid(l:landed)
   call cursor(max([1, a:line]), 1)
   normal! zz
+  call s:difftastic_below(a:path, l:repo)
+endfunction
+
+" Difftastic diff of base..head for {path}, split under the current window. The
+" vertical diff shows which lines moved, difftastic shows what changed inside
+" them. Skipped silently when difftastic is not installed, since it is optional.
+function! s:difftastic_below(path, repo) abort
+  if !semantic_ctags_diff#difftastic#available()
+    return
+  endif
+  call semantic_ctags_diff#difftastic#revs_file(
+        \ [s:last_base, s:last_head], a:path, a:repo, {
+        \ 'open_cmd': semantic_ctags_diff#difftastic#split_cmd(
+        \     get(g:, 'semantic_ctags_diff_file_difftastic_split', 'botright'),
+        \     get(g:, 'semantic_ctags_diff_file_difftastic_height', 20)),
+        \ 'title': 'difftastic://changed/' . tabpagenr() . '/' . a:path,
+        \ 'focus': get(g:, 'semantic_ctags_diff_file_difftastic_focus', 0),
+        \ })
 endfunction
 
 " <CR> in the report: show the symbol under the cursor as a fugitive diff.
@@ -1324,27 +1352,30 @@ function! semantic_ctags_diff#open_diff_under_cursor() abort
         \ l:target.path, l:target.line, l:target.classification !=# 'removed')
 endfunction
 
-" <CR> on a "Changed files" entry: the file as it stands now in a new tab, with
-" a difftastic diff of the whole base..head change split below it. A file git
+" <CR> on a "Changed files" entry: the file at head in a new tab, with a
+" difftastic diff of the whole base..head change split below it. A file git
 " reports as deleted has nothing to open, so nothing happens.
 function! s:open_file_difftastic(path, status) abort
   let l:repo = s:repo()
-  let l:abs = simplify(l:repo . '/' . a:path)
-  if a:status ==# 'D' || !filereadable(l:abs)
-    call semantic_ctags_diff#_dbg(
-          \ 'changed files: not opening ' . a:path . ' (status ' . a:status . ')')
+  if a:status ==# 'D'
+    call semantic_ctags_diff#_dbg('changed files: not opening deleted ' . a:path)
     return
   endif
 
-  execute 'tabedit ' . fnameescape(l:abs)
-  call semantic_ctags_diff#difftastic#revs_file(
-        \ [s:last_base, s:last_head], a:path, l:repo, {
-        \ 'open_cmd': semantic_ctags_diff#difftastic#split_cmd(
-        \     get(g:, 'semantic_ctags_diff_file_difftastic_split', 'botright'),
-        \     get(g:, 'semantic_ctags_diff_file_difftastic_height', 20)),
-        \ 'title': 'difftastic://changed/' . tabpagenr() . '/' . a:path,
-        \ 'focus': get(g:, 'semantic_ctags_diff_file_difftastic_focus', 0),
-        \ })
+  let l:abs = simplify(l:repo . '/' . a:path)
+  if s:head_is_worktree() && filereadable(l:abs)
+    execute 'tabedit ' . fnameescape(l:abs)
+  else
+    let l:obj = s:fugitive_object(s:last_head, a:path)
+    if empty(l:obj)
+      echoerr 'semantic_ctags_diff: cannot open ' . a:path . ' at ' . s:last_head
+            \ . ' (vim-fugitive required)'
+      return
+    endif
+    execute 'tabedit ' . fnameescape(l:obj)
+  endif
+
+  call s:difftastic_below(a:path, l:repo)
 endfunction
 
 function! semantic_ctags_diff#open_symbol_under_cursor(mode) abort
@@ -1358,16 +1389,16 @@ function! semantic_ctags_diff#open_symbol_under_cursor(mode) abort
   let l:abs = simplify(l:repo . '/' . l:target.path)
 
   " Removed symbols no longer exist in the working tree: open them from the
-  " base commit via fugitive. Added/modified symbols live in head, so prefer
-  " the on-disk working file and fall back to the head commit when the current
-  " checkout does not have it.
+  " base commit via fugitive. Added/modified symbols live in head, so use the
+  " on-disk file only when head *is* the checkout — otherwise the report's line
+  " numbers belong to a commit the working tree does not hold.
   if l:target.classification ==# 'removed'
     if empty(s:last_base)
       echoerr 'semantic_ctags_diff: no base ref recorded; run a diff first'
       return
     endif
     call s:open_fugitive(s:last_base, l:target.path, l:target.line, a:mode)
-  elseif filereadable(l:abs)
+  elseif s:head_is_worktree() && filereadable(l:abs)
     call s:open_working(l:abs, l:target.line, a:mode)
   elseif !empty(s:last_head)
     call s:open_fugitive(s:last_head, l:target.path, l:target.line, a:mode)
