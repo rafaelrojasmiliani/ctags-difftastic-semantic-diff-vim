@@ -1,3 +1,7 @@
 .*.sw?
 tags
 .sw?
+GPATH
+GRTAGS
+GTAGS
+tags

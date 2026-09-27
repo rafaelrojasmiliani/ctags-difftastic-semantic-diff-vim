@@ -137,7 +137,8 @@ No `pip install` of `semantic-branch-diff` is required. The plugin runs the
 submodule source directly:
 
 ```bash
-PYTHONPATH=submodules/semantic-ctags-diff python3 -m semantic_branch_diff.cli ...
+PYTHONPATH=submodules/semantic-ctags-diff/ctags3-improved:submodules/semantic-ctags-diff \
+  python3 -m semantic_branch_diff.cli ...
 ```
 
 Python still needs importable **PyDriller** and **python-ctags3** (system packages,

@@ -269,11 +269,16 @@ function! semantic_ctags_diff#_cli_prefix(py_root) abort
     return g:semantic_ctags_diff_cli
   endif
 
-  " Run from source tree: PYTHONPATH=<submodule> python -m semantic_branch_diff.cli
+  " Run from source tree: PYTHONPATH=<submodule>:<ctags3-improved> python -m ...
   " No pip install of semantic-branch-diff required.
-  let l:py_root_esc = shellescape(a:py_root)
+  let l:ctags3 = a:py_root . '/ctags3-improved'
+  let l:path = a:py_root
+  if isdirectory(l:ctags3)
+    let l:path = l:ctags3 . ':' . a:py_root
+  endif
+  let l:py_path_esc = shellescape(l:path)
   let l:python = shellescape(semantic_ctags_diff#_python_executable(a:py_root))
-  return 'PYTHONPATH=' . l:py_root_esc . ' ' . l:python . ' -m semantic_branch_diff.cli'
+  return 'PYTHONPATH=' . l:py_path_esc . ' ' . l:python . ' -m semantic_branch_diff.cli'
 endfunction
 
 " --- Result cache (/tmp, never in the workspace) ----------------------------
