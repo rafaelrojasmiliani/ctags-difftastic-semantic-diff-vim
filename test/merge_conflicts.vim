@@ -81,9 +81,16 @@ if exists('*FugitiveFind')
   execute "normal \<CR>"
   call s:ok(tabpagenr('$') == s:tabs + 2, '<CR> opens another tab')
   let s:diffs = filter(range(1, winnr('$')), 'getwinvar(v:val, "&diff")')
-  call s:ok(len(s:diffs) == 2, 'two windows in diff mode, got ' . len(s:diffs))
+  call s:ok(len(s:diffs) == 3, 'ours | merged | theirs in diff mode, got ' . len(s:diffs))
   call s:ok(bufname(winbufnr(s:diffs[0])) =~# 'a\.cpp$', 'diff shows a.cpp: '
         \ . bufname(winbufnr(s:diffs[0])))
+  call s:ok(bufname('%') =~# '^merged://' && winnr() == 2,
+        \ 'cursor in the middle, merged pane: ' . bufname('%') . ' win ' . winnr())
+  call s:ok(getline('.') ==# '<<<<<<< HEAD', 'cursor on the first marker: ' . getline('.'))
+  call s:ok(getline(1, '$') == ['<<<<<<< HEAD', 'int a() { return 2; }',
+        \ '||||||| merge base', 'int a() { return 0; }', '=======',
+        \ 'int a() { return 1; }', '>>>>>>> feature'],
+        \ 'merged pane shows the diff3 conflict: ' . string(getline(1, '$')))
   if semantic_ctags_diff#difftastic#available()
     call s:ok(!empty(filter(range(1, winnr('$')),
           \ 'bufname(winbufnr(v:val)) =~# "^difftastic://"')), 'difftastic split below')

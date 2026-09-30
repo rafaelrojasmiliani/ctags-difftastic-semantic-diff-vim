@@ -7,12 +7,27 @@
 
 scriptencoding utf-8
 
+" `<cli> --merge-conflicts` stdout lines, or v:null after reporting a failure.
+function! s:cli(repo, ours, theirs, extra) abort
+  let l:cmd = semantic_ctags_diff#_cli_prefix(semantic_ctags_diff#python_project_root())
+        \ . ' --merge-conflicts --repo ' . shellescape(a:repo)
+        \ . ' --base ' . shellescape(a:ours) . ' --head ' . shellescape(a:theirs)
+        \ . join(map(copy(a:extra), '" " . shellescape(v:val)'), '')
+  let [l:out, l:err, l:exit] = semantic_ctags_diff#_run_shell(l:cmd)
+  if l:exit != 0
+    call semantic_ctags_diff#_open_error(l:err + ['', 'Command: ' . l:cmd])
+    echoerr 'semantic_ctags_diff: merge-conflict command failed'
+    return v:null
+  endif
+  return l:out
+endfunction
+
 function! s:render(repo, data) abort
   let l:lines = [
         \ 'Merge conflicts: ' . a:data.theirs . ' into ' . a:data.ours
         \   . '  —  ' . len(a:data.conflicts) . ' file(s)',
         \ 'merge base ' . a:data.merge_base[:9]
-        \   . '   <CR>: vertical diff + difftastic of that file',
+        \   . '   <CR>: ours | merged with conflict markers | theirs',
         \ '',
         \ ]
   " Line number -> path, so <CR> never has to parse the display format.
@@ -40,6 +55,7 @@ function! s:render(repo, data) abort
   let b:semantic_ctags_diff_repo = a:repo
   let b:scd_conflict_ours = a:data.ours_commit
   let b:scd_conflict_theirs = a:data.theirs_commit
+  let b:scd_conflict_names = [a:data.ours, a:data.theirs]
   try
     execute 'file ' . fnameescape('conflicts://' . a:data.ours . '...' . a:data.theirs)
   catch /^Vim\%((\a\+)\)\=:E95:/
@@ -61,18 +77,12 @@ function! semantic_ctags_diff#conflicts#show(args) abort
 
   try
     let l:repo = semantic_ctags_diff#repo_root()
-    let l:cmd = semantic_ctags_diff#_cli_prefix(semantic_ctags_diff#python_project_root())
-          \ . ' --merge-conflicts --repo ' . shellescape(l:repo)
-          \ . ' --base ' . shellescape(l:ours) . ' --head ' . shellescape(l:theirs)
   catch /.*/
     echoerr v:exception
     return
   endtry
-
-  let [l:out, l:err, l:exit] = semantic_ctags_diff#_run_shell(l:cmd)
-  if l:exit != 0
-    call semantic_ctags_diff#_open_error(l:err + ['', 'Command: ' . l:cmd])
-    echoerr 'semantic_ctags_diff: merge-conflict check failed'
+  let l:out = s:cli(l:repo, l:ours, l:theirs, [])
+  if l:out is v:null
     return
   endif
 
@@ -100,6 +110,39 @@ function! semantic_ctags_diff#conflicts#open_at_cursor() abort
     echo 'semantic_ctags_diff: no file on this line'
     return
   endif
-  call semantic_ctags_diff#open_revs_diff(b:semantic_ctags_diff_repo,
+  let l:repo = b:semantic_ctags_diff_repo
+  " Branch names, not shas, so the markers read '<<<<<<< HEAD' / '>>>>>>> devel'.
+  let l:merged = s:cli(l:repo, b:scd_conflict_names[0], b:scd_conflict_names[1],
+        \ ['--path', l:path])
+  if l:merged is v:null
+    return
+  endif
+  call semantic_ctags_diff#open_revs_diff(l:repo,
         \ b:scd_conflict_ours, b:scd_conflict_theirs, l:path)
+  call s:merged_pane(l:path, l:merged)
+endfunction
+
+let s:marker = '^\%(<<<<<<<\|||||||\|=======\|>>>>>>>\)\%( .*\)\=$'
+
+" ours | merged | theirs: window 1 is ours (top-left), so the merged file opens
+" to its right, and difftastic stays full width below all three.
+function! s:merged_pane(path, lines) abort
+  let l:ft = getbufvar(winbufnr(1), '&filetype')
+  1wincmd w
+  rightbelow vnew
+  setlocal buftype=nofile bufhidden=wipe noswapfile nobuflisted
+  call setline(1, a:lines)
+  setlocal nomodifiable
+  let &l:filetype = l:ft
+  try
+    execute 'file ' . fnameescape('merged://' . tabpagenr() . '/' . a:path)
+  catch /^Vim\%((\a\+)\)\=:E95:/
+  endtry
+  diffthis
+  call matchadd('ErrorMsg', s:marker)
+  call cursor(1, 1)
+  if !search('^<<<<<<<', 'cW')
+    echo 'semantic_ctags_diff: ' . a:path . ' has no conflict markers (modify/delete?)'
+  endif
+  normal! zz
 endfunction
