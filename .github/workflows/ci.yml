@@ -80,3 +80,4 @@ jobs:
           vim -N -u NONE -es -S test/complete.vim
           vim -N -u NONE -es -S test/submodule_diff.vim
           vim -N -u NONE -es -S test/merge_compare.vim
+          vim -N -u NONE -es -S test/merge_conflicts.vim

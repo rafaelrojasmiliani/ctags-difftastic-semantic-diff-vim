@@ -62,6 +62,11 @@ command! -nargs=0 SemanticCtagsDiffClearDebugLog
 command! -nargs=+ -complete=customlist,semantic_ctags_diff#complete CompareBranchesForMerge
       \ call semantic_ctags_diff#merge#compare(<q-args>)
 
+" Files that would conflict merging branch-b into branch-a (default HEAD), with
+" the semantic report below; <CR> on a file = vertical diff + difftastic.
+command! -nargs=+ -complete=customlist,semantic_ctags_diff#complete ShowMergeConflict
+      \ call semantic_ctags_diff#conflicts#show(<q-args>)
+
 if exists(':Flog') == 2
   command! -nargs=* -complete=customlist,semantic_ctags_diff#complete SemanticCtagsDiffFlog
         \ call semantic_ctags_diff#cmd_flog(<q-args>)

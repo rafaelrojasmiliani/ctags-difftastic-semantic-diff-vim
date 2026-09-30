@@ -217,6 +217,7 @@ is recomputed automatically. Same commit pair → instant reload.
 | `:SemanticCtagsDiffDebugLog` | Open debug log |
 | `:SemanticCtagsDiffClearDebugLog` | Clear debug log |
 | `:CompareBranchesForMerge [a] b` | Two first-parent histories side by side; `<CR>` = semantic diff of merging that commit into the other branch |
+| `:ShowMergeConflict [a] b` | Files that would conflict merging `b` into `a` (default `HEAD`), semantic report below; `<CR>` = vertical diff + difftastic of that file |
 | `:SemanticCtagsDiffFlog` | Flog companion (if flog installed) |
 | `:SemanticCtagsDiffFlogSymbol` | Pick symbol → Flog history in a new tab (if flog installed) |
 | `:FlogSymbol` / `:FlogFunction` / `:FlogClass` / `:FlogNamespace` | Cursor symbol history in a **new tab** |
@@ -438,6 +439,26 @@ The history is rendered from `git log` rather than by Flog: with
 `--first-parent` the history is a straight line, so Flog's graph column would be
 one `*` per row, and owning the buffer keeps `<CR>` ours instead of Flog's commit
 view. **Flog is not required for this command.**
+
+## Showing merge conflicts before merging
+
+```vim
+:ShowMergeConflict devel          " merge devel into the current commit
+:ShowMergeConflict master devel   " merge devel into master
+```
+
+A new tab lists every file the merge would stop on (`content`, `add/add` or
+`modify/delete`), with the semantic report of `a..b` split below it. `<CR>` on a
+file opens a new tab with `a:<file>` | `b:<file>` as a fugitive vertical diff
+and a difftastic diff below. Nothing is checked out or merged: the Python CLI
+(`--merge-conflicts`, JSON) runs `git merge-file` on the three blobs of every
+file both sides changed. Renames are not followed, so a file renamed on one side
+and edited on the other shows as `modify/delete`.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `g:semantic_ctags_diff_conflicts_report_split` | `'botright'` | Where the report opens |
+| `g:semantic_ctags_diff_conflicts_report_height` | `20` | Report height; `0` = even split |
 
 ## Vim / Fugitive / Flog integration
 

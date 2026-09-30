@@ -1319,6 +1319,15 @@ function! s:open_vdiff_tab(path, line, want_head) abort
   call s:difftastic_below(a:path, l:repo)
 endfunction
 
+" The same view for any two revisions, e.g. both sides of a merge conflict.
+" Sets the report state, so the report's own <CR> uses these revisions after.
+function! semantic_ctags_diff#open_revs_diff(repo, base, head, path) abort
+  let s:last_repo = a:repo
+  let s:last_base = a:base
+  let s:last_head = a:head
+  call s:open_vdiff_tab(a:path, 1, 1)
+endfunction
+
 " Difftastic diff of base..head for {path}, split under the current window. The
 " vertical diff shows which lines moved, difftastic shows what changed inside
 " them. Skipped silently when difftastic is not installed, since it is optional.
